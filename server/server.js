@@ -204,10 +204,12 @@ app.get("/api/health", (req, res) => {
 const serviceRoutes = require("./routes/services");
 const serviceTypeRoutes = require("./routes/serviceTypes");
 const locationRoutes = require("./routes/locations");
+const hubRoutes = require("./routes/hubs");
 
 app.use("/api/services", authenticateToken, serviceRoutes);
 app.use("/api/service-types", authenticateToken, serviceTypeRoutes);
 app.use("/api/locations", authenticateToken, locationRoutes);
+app.use("/api/hubs", authenticateToken, hubRoutes);
 
 // Initialize default admin
 async function initializeAdmin() {
