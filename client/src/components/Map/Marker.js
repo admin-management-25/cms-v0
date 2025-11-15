@@ -330,3 +330,53 @@ export const createLocationMarkerElement = (
 
   return el;
 };
+
+export const createMarker = (cls) => {
+  // ✅ Marker 1
+  const m = document.createElement("div");
+  m.className = `${cls}`;
+  m.style.width = "30px";
+  m.style.height = "30px";
+  m.style.borderRadius = "50%";
+  m.style.background = "#22c55e";
+  m.style.border = "2px solid white";
+  m.style.display = "flex";
+  m.style.alignItems = "center";
+  m.style.justifyContent = "center";
+  m.style.color = "white";
+  m.style.fontSize = "18px";
+  m.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
+  m.style.cursor = "pointer";
+  m.textContent = "✓";
+  return m;
+};
+
+export const popupDesign = (id) => {
+  return `
+    <div style="padding:6px;font-size:14px;">
+      Hello from <b>Ola Maps</b> 👋  
+      <br/><br/>
+
+      <button id="accept-btn" data-id="${id}" style="
+        padding:6px 10px;
+        background:#22c55e;
+        color:white;
+        border:none;
+        border-radius:4px;
+        cursor:pointer;
+        margin-right:6px;">
+        Accept
+      </button>
+
+      <button id="cancel-btn" data-id="${id}" style="
+        padding:6px 10px;
+        background:#f87171;
+        color:white;
+        border:none;
+        border-radius:4px;
+        cursor:pointer;">
+        Cancel
+      </button>
+    </div>
+  `;
+};

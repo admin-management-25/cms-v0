@@ -12,7 +12,11 @@ import MapContainer from "../components/Map/MapContainer";
 import { useMemo } from "react";
 import useUserStore from "../store/adminStore";
 import * as turf from "@turf/turf";
-import { createLocationMarkerElement } from "../components/Map/Marker";
+import {
+  createLocationMarkerElement,
+  createMarker,
+  popupDesign,
+} from "../components/Map/Marker";
 import {
   buildRoutesGeoJSON,
   drawCable,
@@ -394,6 +398,50 @@ const NetworkMap = () => {
       };
 
       map.on("click", handleClick);
+
+      // const locs = [
+      //   {
+      //     coords: {
+      //       lat: 10.980482,
+      //       lng: 76.966911,
+      //     },
+      //   },
+      //   {
+      //     coords: {
+      //       lat: 10.97918,
+      //       lng: 76.964489,
+      //     },
+      //   },
+      // ];
+
+      // locs.map((loc) => {
+      //   const marker = createMarker("mys-marker");
+      //   const popup = olaMaps
+      //     .addPopup({ offset: [0, -20], anchor: "bottom" })
+      //     .setHTML(popupDesign());
+
+      //   olaMaps
+      //     .addMarker({ element: marker, anchor: "center" })
+      //     .setLngLat([loc.coords.lng, loc.coords.lat])
+      //     .setPopup(popup)
+      //     .addTo(map);
+      // });
+
+      // const mapContainer = map.getContainer();
+      // mapContainer.addEventListener("click", (event) => {
+      //   const acceptBtn = event.target.closest("#accept-btn");
+      //   const cancelBtn = event.target.closest("#cancel-btn");
+
+      //   if (acceptBtn) {
+      //     console.log("ACCEPT clicked for marker:", acceptBtn.dataset.id);
+      //     return;
+      //   }
+
+      //   if (cancelBtn) {
+      //     console.log("CANCEL clicked for marker:", cancelBtn.dataset.id);
+      //     return;
+      //   }
+      // });
 
       map.flyTo({
         center: [parseFloat(CENTRAL_HUB.lng), parseFloat(CENTRAL_HUB.lat)],
