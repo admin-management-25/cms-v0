@@ -1,5 +1,6 @@
 import Swal from "sweetalert2";
 import axios from "../axios";
+import { createJunctionBoxMarker } from "./Marker";
 
 export const buildRoutesGeoJSON = (elements, polyline) => {
   return {
@@ -183,5 +184,136 @@ export const safeRemoveLayer = (mapInstance, layerId) => {
 export const safeRemoveSource = (mapInstance, sourceId) => {
   if (mapInstance && mapInstance.getSource && mapInstance.getSource(sourceId)) {
     mapInstance.removeSource(sourceId);
+  }
+};
+
+export const renderJunctionBoxMarkers = (locations, mapInstance) => {
+  if (!mapInstance || !locations) return;
+  let markers = [];
+  locations.forEach((location) => {
+    const junctions = location?.junctionBox || [];
+    if (!junctions.length) return;
+
+    junctions.forEach((box) => {
+      const { latitude, longitude } = box.coordinates || {};
+      if (!latitude || !longitude) return;
+      markers.push(createJunctionBoxMarker(box, mapInstance, location));
+    });
+  });
+  console.log("(renderjuncBox)Returing Markers :. .", markers);
+  return markers;
+};
+
+export const addJunctionBox = (
+  location,
+  onCancel,
+  mapInstance,
+  userInstance
+) => {
+  const { map, olaMaps, isMapLoaded } = mapInstance;
+  const { user, setUser } = userInstance;
+  if (!map || !olaMaps || !isMapLoaded) {
+    console.log("Returning:", map, olaMaps, isMapLoaded);
+    return;
+  }
+  try {
+    const geojson = user.geojson;
+    let markers = [];
+    let junctionBoxes = [];
+
+    const idx = geojson.features.findIndex(
+      (el) =>
+        el.coordinates?.latitude === location.coordinates?.latitude &&
+        el.coordinates?.longitude === location.coordinates?.longitude
+    );
+
+    if (idx === -1) {
+      console.log(
+        "Location was not FOund ...[idx] :",
+        idx,
+        "location.coord : ",
+        location.coordinates
+      );
+      return console.error("No matching route found");
+    }
+
+    const routeCoords = geojson.features[idx].geometry.coordinates.map(
+      ([lng, lat]) => [lat, lng]
+    );
+
+    const junctionCoords = (location.junctionBox || []).map((jb) => ({
+      lat: jb.coordinates.latitude,
+      lng: jb.coordinates.longitude,
+    }));
+
+    routeCoords.forEach(([lat, lng]) => {
+      // ❌ Skip coordinates that match any junctionBox
+      const isJunctionPoint = junctionCoords.some(
+        (jb) => jb.lat === lat && jb.lng === lng
+      );
+
+      if (isJunctionPoint) {
+        return;
+      }
+
+      const markerEl = document.createElement("div");
+      markerEl.className =
+        "w-4 h-4 rounded-full bg-yellow-500 border-2 border-black cursor-pointer shadow-md transition hover:scale-110";
+
+      olaMaps
+        .addMarker({ element: markerEl, anchor: "center" })
+        .setLngLat([lng, lat])
+        .addTo(map);
+
+      markerEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const event = new CustomEvent("open-junction-modal", {
+          detail: { lat, lng, locationId: location._id },
+        });
+        // markers.forEach((m) => m.remove());
+        window.dispatchEvent(event);
+      });
+      markers.push(markerEl);
+    });
+
+    junctionBoxes = renderJunctionBoxMarkers([location], mapInstance);
+
+    if (onCancel) {
+      onCancel(async () => {
+        markers.forEach((m) => m.remove());
+        junctionBoxes.forEach((m) => m.remove());
+
+        // 🔄 Restore original GeoJSON data (no edits)
+        map.getSource("routes").setData(geojson);
+
+        Swal.fire({
+          title: "Changes discarded",
+          text: "Your junction has been restored to its original shape.",
+          icon: "success",
+          timer: 1500,
+          showConfirmButton: false,
+        });
+      });
+    }
+  } catch (error) {
+    console.log("Error while Adding the Junction Boxes : ");
+  }
+};
+
+export const deleteJunctionBox = async (e) => {
+  try {
+    console.log("the Event delete-junction-box:", e);
+    const junctionBox = e.detail.junctionBox;
+    const locationId = e.detail.locationId;
+
+    const response = await axios.delete(
+      `/api/locations/delete-junction/${locationId}/${junctionBox._id}`
+    );
+
+    if (response.status === 200) {
+      return response;
+    }
+  } catch (error) {
+    console.log("Error While Deleting the JucntionBox : ", error);
   }
 };

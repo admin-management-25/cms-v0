@@ -12,14 +12,21 @@ import MapContainer from "../components/Map/MapContainer";
 import { useMemo } from "react";
 import useUserStore from "../store/adminStore";
 import * as turf from "@turf/turf";
-import { createLocationMarkerElement } from "../components/Map/Marker";
 import {
+  createLocationMarkerElement,
+  createMarker,
+} from "../components/Map/Marker";
+import {
+  addJunctionBox,
   buildRoutesGeoJSON,
+  deleteJunctionBox,
   drawCable,
   safeRemoveLayer,
   safeRemoveSource,
   updateRoutes,
 } from "../components/Map/utils";
+import JunctionModal from "../components/JunctionModal";
+import Swal from "sweetalert2";
 
 const NetworkMap = () => {
   const [allLocations, setAllLocations] = useState([]);
@@ -38,6 +45,9 @@ const NetworkMap = () => {
   const { user, setUser } = useUserStore();
   const isMapLoaded = useRef(false);
   const cleanupScheduled = useRef(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [coords, setCoords] = useState(null);
+  const [locationId, setLocationId] = useState(null);
 
   const EARTH_RADIUS = 6378137;
 
@@ -210,6 +220,21 @@ const NetworkMap = () => {
     ]
   );
 
+  const handleJunctionUpdate = (updatedLocation) => {
+    setAllLocations((prev) =>
+      prev.map((loc) =>
+        loc._id === updatedLocation._id ? updatedLocation : loc
+      )
+    );
+
+    addJunctionBox(
+      updatedLocation,
+      undefined,
+      { map, olaMaps, isMapLoaded },
+      { user, setUser }
+    );
+  };
+
   const renderConnections = useCallback(
     async (connections) => {
       if (!map || !olaMaps || !isMapLoaded.current) return;
@@ -236,7 +261,8 @@ const NetworkMap = () => {
             setHoveredLocation,
             { map, olaMaps, isMapLoaded },
             { user, setUser },
-            turf
+            turf,
+            addJunctionBox
           );
           markerElement.classList.add("location-marker");
           olaMaps
@@ -394,6 +420,10 @@ const NetworkMap = () => {
       };
 
       map.on("click", handleClick);
+      // const locs = {
+
+      // }
+      //        createMarker()
 
       map.flyTo({
         center: [parseFloat(CENTRAL_HUB.lng), parseFloat(CENTRAL_HUB.lat)],
@@ -656,7 +686,8 @@ const NetworkMap = () => {
           setHoveredLocation,
           { map, olaMaps, isMapLoaded },
           { user, setUser },
-          turf
+          turf,
+          addJunctionBox
         );
         markerElement.classList.add("location-marker");
         olaMaps
@@ -693,6 +724,44 @@ const NetworkMap = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const handler = (e) => {
+      setLocationId(e.detail.locationId);
+      setCoords(e.detail);
+      setModalOpen(true);
+    };
+
+    window.addEventListener("open-junction-modal", handler);
+
+    return () => window.removeEventListener("open-junction-modal", handler);
+  }, []);
+
+  useEffect(() => {
+    const handleJunctionDelete = async (e) => {
+      const junctionBox = e.detail.junctionBox;
+      const response = await deleteJunctionBox(e);
+      const { data } = response;
+      setAllLocations((prev) =>
+        prev.map((loc) => (loc._id === data.data._id ? data.data : loc))
+      );
+      document.dispatchEvent(
+        new CustomEvent("junction-deleted", {
+          detail: { location: data.data, junctionBoxId: junctionBox._id },
+        })
+      );
+      Swal.fire({
+        title: "Deleted!",
+        text: data.message || "The junction box has been removed.",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    };
+    window.addEventListener("delete-junction-box", handleJunctionDelete);
+    return () =>
+      window.removeEventListener("delete-junction-box", handleJunctionDelete);
+  }, []);
+
   return (
     <div>
       <div className="relative">
@@ -725,6 +794,14 @@ const NetworkMap = () => {
           <SearchBox />
         </div>
       </div>
+
+      <JunctionModal
+        isOpen={modalOpen}
+        coords={coords}
+        locationId={locationId}
+        onClose={() => setModalOpen(false)}
+        onSuccess={handleJunctionUpdate}
+      />
 
       <NetworkExport
         locations={filteredLocations}
