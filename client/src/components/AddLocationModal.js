@@ -4,6 +4,25 @@
 import { useState, useEffect } from "react";
 import axios from "../components/axios";
 
+export const uploadToCloudinary = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", "react_upload_preset"); // ← Replace with your preset
+  formData.append("cloud_name", "dgixdcqvh"); // ← Replace with your cloud name
+
+  const res = await fetch(
+    "https://api.cloudinary.com/v1_1/dgixdcqvh/image/upload",
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  const data = await res.json();
+  if (data.secure_url) return data.secure_url;
+  throw new Error(data.error?.message || "Upload failed");
+};
+
 const AddLocationModal = ({
   isOpen,
   onClose,
@@ -24,26 +43,6 @@ const AddLocationModal = ({
   const [imagePreview, setImagePreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  // ✅ Cloudinary Upload (Hardcoded)
-  const uploadToCloudinary = async (file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", "react_upload_preset"); // ← Replace with your preset
-    formData.append("cloud_name", "dgixdcqvh"); // ← Replace with your cloud name
-
-    const res = await fetch(
-      "https://api.cloudinary.com/v1_1/dgixdcqvh/image/upload",
-      {
-        method: "POST",
-        body: formData,
-      }
-    );
-
-    const data = await res.json();
-    if (data.secure_url) return data.secure_url;
-    throw new Error(data.error?.message || "Upload failed");
-  };
 
   useEffect(() => {
     if (isOpen) {

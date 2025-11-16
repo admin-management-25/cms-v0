@@ -259,4 +259,93 @@ router.get("/stats/dashboard", async (req, res) => {
   }
 });
 
+router.post("/add-junction/:locationId", async (req, res) => {
+  try {
+    const { lat, lng, image, notes } = req.body;
+    const { locationId } = req.params;
+
+    if (!notes || lat == null || lng == null) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    if (image && !isValidCloudinaryUrl(image)) {
+      return res.status(400).json({ message: "Invalid Cloudinary image URL" });
+    }
+
+    const junctionData = {
+      notes: notes || "",
+      coordinates: {
+        latitude: parseFloat(lat),
+        longitude: parseFloat(lng),
+      },
+      image: image || "",
+      createdAt: new Date(),
+    };
+
+    const updatedLocation = await Location.findByIdAndUpdate(
+      locationId,
+      {
+        $push: { junctionBox: junctionData },
+      },
+      { new: true }
+    );
+
+    if (!updatedLocation) {
+      return res.status(404).json({ message: "Location not found" });
+    }
+
+    return res.status(200).json({
+      message: "Junction box added successfully",
+      data: updatedLocation,
+    });
+  } catch (error) {
+    console.error("Stats error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.delete("/delete-junction/:locationId/:junctionId", async (req, res) => {
+  try {
+    const { locationId, junctionId } = req.params;
+
+    console.log("The JunctionBx Delete Route :", locationId, junctionId);
+    if (!locationId || !junctionId) {
+      return res.status(400).json({ message: "Missing required parameters" });
+    }
+
+    const location = await Location.findById(locationId);
+    if (!location)
+      return res.status(404).json({ message: "Location not found" });
+
+    const exists = location.junctionBox.some(
+      (j) => j._id.toString() === junctionId
+    );
+    if (!exists)
+      return res.status(404).json({ message: "Junction box not found" });
+
+    // Pull the matching junctionBox object
+    const updatedLocation = await Location.findByIdAndUpdate(
+      locationId,
+      {
+        $pull: {
+          junctionBox: { _id: junctionId },
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedLocation) {
+      return res.status(404).json({ message: "Location not found" });
+    }
+
+    return res.status(200).json({
+      message: "Junction box deleted successfully",
+      data: updatedLocation,
+    });
+  } catch (error) {
+    console.error("Delete junction error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

@@ -52,6 +52,20 @@ const locationSchema = new mongoose.Schema({
       default: 76.9668453, // Fixed central hub location
     },
   },
+  junctionBox: {
+    type: [
+      {
+        coordinates: {
+          latitude: { type: Number, required: true },
+          longitude: { type: Number, required: true },
+        },
+        notes: { type: String, default: "" },
+        image: { type: String, default: "" }, // cloudinary url later
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    default: [],
+  },
   createdAt: {
     type: Date,
     default: Date.now,
