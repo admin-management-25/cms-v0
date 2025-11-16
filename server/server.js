@@ -27,9 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ✅ FIXED: Improved MongoDB connection handling
-// const MONGODB_URI = process.env.MONGODB_URI
-const MONGODB_URI =
-  "mongodb+srv://fazil:fazil@cluster0.zcl0jad.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+const MONGODB_URI = process.env.MONGODB_URI;
 
 // Configure mongoose for serverless
 mongoose.set("strictQuery", false);
