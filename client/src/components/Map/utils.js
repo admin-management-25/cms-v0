@@ -49,6 +49,7 @@ export const updateRoutes = (updatedGeojson, map) => {
 };
 
 // drawCable function
+// drawCable function - WITH DYNAMIC INTERVAL CONTROL
 export const drawCable = (
   location,
   onCancel,
@@ -73,43 +74,212 @@ export const drawCable = (
         el.coordinates?.longitude === location.coordinates?.longitude
     );
 
-    const routeCoords = geojson.features[idx].geometry.coordinates.map(
-      ([lng, lat]) => [lat, lng]
-    );
+    if (idx === -1) {
+      console.error("Route not found for location");
+      return;
+    }
 
-    const line = turf.lineString(geojson.features[idx].geometry.coordinates);
-    const length = turf.length(line, { units: "meters" });
-    console.log("Route length:", length, "ms");
-
-    const interval = 1;
-    const markers = [];
+    // Clone the GeoJSON to avoid direct mutation
     const updatedGeoJSON = structuredClone(geojson);
 
-    routeCoords.forEach((coord, index) => {
-      if (index % interval !== 0) return;
+    // Get coordinates in GeoJSON format [lng, lat]
+    const routeCoords = [...updatedGeoJSON.features[idx].geometry.coordinates];
 
-      const markerEl = document.createElement("div");
-      markerEl.className =
-        "w-5 h-5 rounded-full bg-red-400 border-2 border-white cursor-grab z-50";
+    const line = turf.lineString(routeCoords);
+    const length = turf.length(line, { units: "meters" });
+    console.log("Route length:", length, "meters");
 
-      const marker = olaMaps
-        .addMarker({ element: markerEl, anchor: "center", draggable: true })
-        .setLngLat([Number(coord[1]), Number(coord[0])])
-        .addTo(map);
+    let currentInterval = 1; // Default interval
+    let markers = [];
+    let controlPointIndices = [];
 
-      marker.on("drag", (event) => {
-        const { lat, lng } = event.target._lngLat;
-        routeCoords[index] = [lat, lng];
+    // Create control popup
+    const controlPopup = document.createElement("div");
+    controlPopup.className =
+      "fixed top-20 right-6 bg-white rounded-lg shadow-2xl border-2 border-blue-500 p-4 z-[9999]";
+    controlPopup.innerHTML = `
+      <div class="flex flex-col space-y-3">
+        <div class="flex items-center justify-between pb-2 border-b border-gray-200">
+          <div class="flex items-center space-x-2">
+            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+            </svg>
+            <h3 class="font-bold text-gray-800">Control Points</h3>
+          </div>
+        </div>
+        
+        <div class="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+          <span class="text-sm text-gray-600 font-medium">Interval:</span>
+          <div class="flex items-center space-x-2">
+            <button id="decrease-interval" class="w-8 h-8 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-full transition-all hover:scale-110 shadow-md">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M20 12H4"/>
+              </svg>
+            </button>
+            <span id="interval-value" class="text-lg font-bold text-blue-600 min-w-[3rem] text-center">${currentInterval}</span>
+            <button id="increase-interval" class="w-8 h-8 flex items-center justify-center bg-green-500 hover:bg-green-600 text-white rounded-full transition-all hover:scale-110 shadow-md">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/>
+              </svg>
+            </button>
+          </div>
+        </div>
 
-        // // Update only this feature's coordinates
-        updatedGeoJSON.features[idx].geometry.coordinates = routeCoords.map(
-          ([lat, lng]) => [lng, lat]
-        );
-        map.getSource("routes").setData(updatedGeoJSON); // redraw
+        <div class="bg-blue-50 rounded-lg p-3 border border-blue-200">
+          <div class="flex items-start space-x-2">
+            <svg class="w-4 h-4 text-blue-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+            </svg>
+            <div class="flex-1">
+              <p class="text-xs text-blue-800 leading-relaxed">
+                <strong>Lower values</strong> = More control points<br/>
+                <strong>Higher values</strong> = Fewer control points
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-gray-200">
+          <div class="flex items-center justify-between text-xs text-gray-500">
+            <span>Total Points:</span>
+            <span id="total-markers" class="font-semibold text-gray-700">0</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(controlPopup);
+
+    // Function to create markers with current interval
+    const createMarkers = (interval) => {
+      // Remove existing markers
+      markers.forEach((m) => m.remove());
+      markers = [];
+      controlPointIndices = [];
+
+      // Create control point markers at intervals
+      routeCoords.forEach((coord, index) => {
+        // Always include first and last point
+        if (
+          index === 0 ||
+          index === routeCoords.length - 1 ||
+          index % interval === 0
+        ) {
+          controlPointIndices.push(index);
+
+          const markerEl = document.createElement("div");
+          markerEl.className =
+            "w-5 h-5 rounded-full bg-red-400 border-2 border-white cursor-grab z-50 hover:scale-125 transition-transform shadow-lg";
+
+          const marker = olaMaps
+            .addMarker({ element: markerEl, anchor: "center", draggable: true })
+            .setLngLat([coord[0], coord[1]]) // GeoJSON format: [lng, lat]
+            .addTo(map);
+
+          marker.on("dragstart", () => {
+            markerEl.style.transform = "scale(1.3)";
+            markerEl.classList.remove("bg-red-400");
+            markerEl.classList.add("bg-blue-500");
+          });
+
+          marker.on("drag", (event) => {
+            const { lat, lng } = event.target._lngLat;
+            const currentControlIndex = controlPointIndices.indexOf(index);
+
+            if (currentControlIndex === -1) return;
+
+            // Update the dragged control point
+            routeCoords[index] = [lng, lat];
+
+            // Find previous and next control points
+            const prevControlIndex =
+              currentControlIndex > 0
+                ? controlPointIndices[currentControlIndex - 1]
+                : null;
+            const nextControlIndex =
+              currentControlIndex < controlPointIndices.length - 1
+                ? controlPointIndices[currentControlIndex + 1]
+                : null;
+
+            // Interpolate coordinates between previous control point and current
+            if (prevControlIndex !== null) {
+              const prevCoord = routeCoords[prevControlIndex];
+              const numSteps = index - prevControlIndex;
+
+              for (let i = 1; i < numSteps; i++) {
+                const t = i / numSteps;
+                const interpolatedLng = prevCoord[0] + (lng - prevCoord[0]) * t;
+                const interpolatedLat = prevCoord[1] + (lat - prevCoord[1]) * t;
+                routeCoords[prevControlIndex + i] = [
+                  interpolatedLng,
+                  interpolatedLat,
+                ];
+              }
+            }
+
+            // Interpolate coordinates between current and next control point
+            if (nextControlIndex !== null) {
+              const nextCoord = routeCoords[nextControlIndex];
+              const numSteps = nextControlIndex - index;
+
+              for (let i = 1; i < numSteps; i++) {
+                const t = i / numSteps;
+                const interpolatedLng = lng + (nextCoord[0] - lng) * t;
+                const interpolatedLat = lat + (nextCoord[1] - lat) * t;
+                routeCoords[index + i] = [interpolatedLng, interpolatedLat];
+              }
+            }
+
+            // Update the GeoJSON feature
+            updatedGeoJSON.features[idx].geometry.coordinates = [
+              ...routeCoords,
+            ];
+
+            // Redraw the route
+            if (map.getSource("routes")) {
+              map.getSource("routes").setData(updatedGeoJSON);
+            }
+          });
+
+          marker.on("dragend", () => {
+            markerEl.style.transform = "scale(1)";
+            markerEl.classList.remove("bg-blue-500");
+            markerEl.classList.add("bg-red-400");
+          });
+
+          markers.push(marker);
+        }
       });
 
-      markers.push(marker);
-    });
+      // Update marker count display
+      document.getElementById("total-markers").textContent = markers.length;
+    };
+
+    // Initial marker creation
+    createMarkers(currentInterval);
+
+    // Button event listeners
+    document
+      .getElementById("increase-interval")
+      .addEventListener("click", () => {
+        if (currentInterval < 100) {
+          currentInterval += 2;
+          document.getElementById("interval-value").textContent =
+            currentInterval;
+          createMarkers(currentInterval);
+        }
+      });
+
+    document
+      .getElementById("decrease-interval")
+      .addEventListener("click", () => {
+        if (currentInterval > 5) {
+          currentInterval -= 5;
+          document.getElementById("interval-value").textContent =
+            currentInterval;
+          createMarkers(currentInterval);
+        }
+      });
 
     if (onCancel) {
       onCancel(async () => {
@@ -125,11 +295,18 @@ export const drawCable = (
         });
 
         if (result.isConfirmed) {
-          // 🗑️ Remove all draggable markers
+          // Remove all draggable markers
           markers.forEach((m) => m.remove());
 
-          // 🔄 Restore original GeoJSON data (no edits)
-          map.getSource("routes").setData(geojson);
+          // Remove control popup
+          if (controlPopup && controlPopup.parentNode) {
+            controlPopup.parentNode.removeChild(controlPopup);
+          }
+
+          // Restore original GeoJSON data (no edits)
+          if (map.getSource("routes")) {
+            map.getSource("routes").setData(geojson);
+          }
 
           Swal.fire({
             title: "Changes discarded",
@@ -146,32 +323,59 @@ export const drawCable = (
 
     if (onSave) {
       onSave(async () => {
-        const geojsonResponse = await axios.put(
-          `/api/admin/${user.id}/geojson`,
-          {
-            geojson: updatedGeoJSON,
-          }
-        );
-        if (geojsonResponse.status === 200) {
-          alert("Cable saved successfully ✅:", geojson);
-          markers.forEach((m) => m.remove());
-          const updateUser = geojsonResponse.data.user;
-          setUser(updateUser);
-          localStorage.setItem("auth", JSON.stringify(updateUser));
-          // Add or update source
-          if (!map.getSource("routes")) {
-            map.addSource("routes", {
-              type: "geojson",
-              data: updatedGeoJSON,
+        try {
+          const geojsonResponse = await axios.put(
+            `/api/admin/${user.id}/geojson`,
+            {
+              geojson: updatedGeoJSON,
+            }
+          );
+
+          if (geojsonResponse.status === 200) {
+            // Remove markers
+            markers.forEach((m) => m.remove());
+
+            // Remove control popup
+            if (controlPopup && controlPopup.parentNode) {
+              controlPopup.parentNode.removeChild(controlPopup);
+            }
+
+            const updateUser = geojsonResponse.data.user;
+            setUser(updateUser);
+            localStorage.setItem("auth", JSON.stringify(updateUser));
+
+            // Update the map source
+            if (map.getSource("routes")) {
+              map.getSource("routes").setData(updatedGeoJSON);
+            }
+
+            Swal.fire({
+              title: "Success!",
+              text: "Cable route saved successfully",
+              icon: "success",
+              timer: 1500,
+              showConfirmButton: false,
             });
-          } else {
-            map.getSource("routes").setData(updatedGeoJSON);
           }
+        } catch (error) {
+          console.error("Error saving cable route:", error);
+          Swal.fire({
+            title: "Error!",
+            text: "Failed to save cable route",
+            icon: "error",
+            confirmButtonColor: "#e74c3c",
+          });
         }
       });
     }
   } catch (error) {
     console.log("Error While Custom Route : ", error);
+    Swal.fire({
+      title: "Error!",
+      text: "Failed to initialize cable editing",
+      icon: "error",
+      confirmButtonColor: "#e74c3c",
+    });
   }
 };
 
