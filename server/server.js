@@ -205,11 +205,13 @@ const serviceRoutes = require("./routes/services");
 const serviceTypeRoutes = require("./routes/serviceTypes");
 const locationRoutes = require("./routes/locations");
 const hubRoutes = require("./routes/hubs");
+const areaNameRoutes = require("./routes/areaNames");
 
 app.use("/api/services", authenticateToken, serviceRoutes);
 app.use("/api/service-types", authenticateToken, serviceTypeRoutes);
 app.use("/api/locations", authenticateToken, locationRoutes);
 app.use("/api/hubs", authenticateToken, hubRoutes);
+app.use("/api/area-names", authenticateToken, areaNameRoutes);
 
 // Initialize default admin
 async function initializeAdmin() {
