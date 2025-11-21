@@ -66,7 +66,11 @@ router.post("/", async (req, res) => {
     const areaName = new AreaName(areaNameData);
     const savedAreaName = await areaName.save();
 
-    res.status(201).json(savedAreaName);
+    res.status(201).json({
+      data: savedAreaName,
+      success: true,
+      message: "Area Name added successfully",
+    });
   } catch (error) {
     console.error("Create area name error:", error);
 
