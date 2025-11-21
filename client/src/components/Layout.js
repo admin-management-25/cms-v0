@@ -1,3 +1,4 @@
+// components/Layout.js - UPDATED
 "use client";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -11,6 +12,7 @@ import {
   LogOut,
   Menu,
   X,
+  Building2, // Added for Hubs icon
 } from "lucide-react";
 import useUserStore from "../store/adminStore";
 
@@ -31,10 +33,12 @@ const Layout = ({ children }) => {
     navigate("/login");
   };
 
+  // ✅ UPDATED: Added Hubs to navigation
   const navigationItems = [
     { path: "/dashboard", label: "Home", icon: Home },
     { path: "/network-map", label: "Network Map", icon: Map },
     { path: "/locations", label: "Locations", icon: MapPin },
+    { path: "/hubs", label: "Hubs", icon: Building2 }, // ← NEW
     { path: "/services", label: "Services", icon: Settings },
     { path: "/service-types", label: "Service Types", icon: Wrench },
   ];
@@ -82,7 +86,7 @@ const Layout = ({ children }) => {
           </div>
 
           {/* Navigation Menu */}
-          <ul className="flex-1 py-4 space-y-1">
+          <ul className="flex-1 py-4 space-y-1 overflow-y-auto">
             {navigationItems.map((item) => {
               const IconComponent = item.icon;
               const isActive = location.pathname === item.path;

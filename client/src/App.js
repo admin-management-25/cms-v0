@@ -1,3 +1,4 @@
+// App.js - UPDATED
 import {
   BrowserRouter as Router,
   Routes,
@@ -11,11 +12,11 @@ import Login from "./components/Login";
 import Dashboard from "./pages/Dashboard";
 import NetworkMap from "./pages/NetworkMap";
 import Locations from "./pages/Locations";
+import Hubs from "./pages/Hubs"; // ← NEW IMPORT
 import Services from "./pages/Services";
 import ServiceTypes from "./pages/ServiceTypes";
 import "./App.css";
 import MapProvider from "./components/Map/MapProvider";
-import Layout2 from "./components/Layout2";
 
 function App() {
   return (
@@ -53,6 +54,17 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Locations />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            {/* ✅ NEW: Hubs Route */}
+            <Route
+              path="/hubs"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Hubs />
                   </Layout>
                 </ProtectedRoute>
               }
