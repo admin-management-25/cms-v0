@@ -2,6 +2,18 @@ import Swal from "sweetalert2";
 import axios from "../axios";
 import { createJunctionBoxMarker } from "./Marker";
 
+export const showToast = (icon, title) => {
+  Swal.fire({
+    toast: true,
+    position: "top-end",
+    icon,
+    title,
+    showConfirmButton: false,
+    timer: 2500,
+    timerProgressBar: true,
+  });
+};
+
 export const buildRoutesGeoJSON = (elements, polyline) => {
   return {
     type: "FeatureCollection",
@@ -519,5 +531,29 @@ export const deleteJunctionBox = async (e) => {
     }
   } catch (error) {
     console.log("Error While Deleting the JucntionBox : ", error);
+  }
+};
+
+export const deleteSubHub = async (hub, adminId, onSuccess) => {
+  try {
+    const response = await axios.delete(`/api/hubs/${hub._id}/${adminId}`);
+    if (response.status === 200) {
+      showToast(
+        "success",
+        response?.data?.message || "Hub has been Deleted successfully!"
+      );
+      return response;
+    } else {
+      showToast(
+        "error",
+        response?.data?.message || "Error while Deleting the Hub"
+      );
+    }
+  } catch (error) {
+    showToast(
+      "error",
+      error.response?.data?.message || "Error while Deleting the Hub"
+    );
+    console.log("Error While Deleting the Sub Hub : ", error);
   }
 };
