@@ -83,7 +83,11 @@ router.post("/", async (req, res) => {
     const hub = new Hub(hubData);
     const savedHub = await hub.save();
 
-    res.status(201).json(savedHub);
+    res.status(201).json({
+      success: true,
+      message: "Hub added successfully",
+      data: savedHub,
+    });
   } catch (error) {
     console.error("Create hub error:", error);
     res.status(400).json({ message: error.message });
@@ -184,6 +188,7 @@ router.delete("/:id/:adminId", async (req, res) => {
         role: updatedAdmin.role,
         geojson: updatedAdmin.geojson,
       },
+      deletedHub,
     });
   } catch (error) {
     console.error("Delete hub error:", error);

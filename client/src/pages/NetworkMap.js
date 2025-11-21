@@ -15,28 +15,38 @@ import * as turf from "@turf/turf";
 import {
   createLocationMarkerElement,
   createMarker,
+  createSubHubMarker,
 } from "../components/Map/Marker";
 import {
   addJunctionBox,
   buildRoutesGeoJSON,
   deleteJunctionBox,
+  deleteSubHub,
   drawCable,
   safeRemoveLayer,
   safeRemoveSource,
+  showToast,
   updateRoutes,
 } from "../components/Map/utils";
 import JunctionModal from "../components/JunctionModal";
 import Swal from "sweetalert2";
+import AddHubModal from "../components/AddHubModal";
+import { useActionPopup } from "../components/hooks/useActionPopup";
+import ActionPopup from "../components/ActionPopup";
 
 const NetworkMap = () => {
   const [allLocations, setAllLocations] = useState([]);
   const [filteredLocations, setFilteredLocations] = useState([]);
   const [services, setServices] = useState([]);
   const [serviceTypes, setServiceTypes] = useState([]);
+  const [hubs, setHubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [clickedCoordinates, setClickedCoordinates] = useState(null);
+  // const [showActionPopup, setShowActionPopup] = useState(false);
+  // const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
+  const [showAddHubModal, setShowAddHubModal] = useState(false);
+  // const [clickedCoordinates, setClickedCoordinates] = useState(null);
   const [success, setSuccess] = useState("");
   const [hoveredLocation, setHoveredLocation] = useState(null);
   const [mapServiceTypeFilter, setMapServiceTypeFilter] = useState("");
@@ -48,6 +58,16 @@ const NetworkMap = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [coords, setCoords] = useState(null);
   const [locationId, setLocationId] = useState(null);
+  const hubMarkersRef = useRef({});
+
+  // Use the custom hook
+  const {
+    showActionPopup,
+    popupPosition,
+    clickedCoordinates,
+    openPopup,
+    closePopup,
+  } = useActionPopup(map);
 
   const EARTH_RADIUS = 6378137;
 
@@ -236,7 +256,7 @@ const NetworkMap = () => {
   };
 
   const renderConnections = useCallback(
-    async (connections) => {
+    async (connections, hubs) => {
       if (!map || !olaMaps || !isMapLoaded.current) return;
 
       try {
@@ -272,6 +292,14 @@ const NetworkMap = () => {
               Number(conn.coordinates.latitude),
             ])
             .addTo(map);
+        }
+        for (let hub of hubs) {
+          const hubMarker = createSubHubMarker(hub, {
+            map,
+            olaMaps,
+            isMapLoaded,
+          });
+          hubMarkersRef.current[hub._id] = hubMarker;
         }
         if (user.geojson && user.geojson !== "null") {
           // Add or update source
@@ -375,6 +403,7 @@ const NetworkMap = () => {
       map,
       olaMaps,
       createLocationMarkerElement,
+      createSubHubMarker,
       drawRadiusCircles,
       buildRoutesGeoJSON,
       safeRemoveLayer,
@@ -416,7 +445,18 @@ const NetworkMap = () => {
 
       const handleClick = (e) => {
         const { lng, lat } = e.lngLat;
-        handleMapClick({ longitude: lng, latitude: lat });
+        // Get the container's position to calculate correct screen coordinates
+        const canvas = map.getCanvas();
+        const rect = canvas.getBoundingClientRect();
+
+        // Calculate screen position relative to viewport
+        const screenPosition = {
+          x: e.point.x + rect.left,
+          y: e.point.y + rect.top,
+        };
+
+        // Open the action popup
+        openPopup({ longitude: lng, latitude: lat }, screenPosition);
       };
 
       map.on("click", handleClick);
@@ -470,21 +510,29 @@ const NetworkMap = () => {
   }, [allLocations]);
 
   useEffect(() => {
-    if (map && olaMaps && isMapLoaded.current && locationsForMap.length >= 0) {
-      renderConnections(locationsForMap);
+    if (
+      map &&
+      olaMaps &&
+      isMapLoaded.current &&
+      hubs.length > 0 &&
+      locationsForMap.length >= 0
+    ) {
+      renderConnections(locationsForMap, hubs);
     }
-  }, [locationsForMap, map, olaMaps, renderConnections]);
+  }, [locationsForMap, hubs, map, olaMaps, renderConnections]);
 
   const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 
   const fetchData = async () => {
     try {
-      const [locationsRes, servicesRes, serviceTypesRes] = await Promise.all([
-        axios.get("/api/locations"),
-        axios.get("/api/services"),
-        axios.get("/api/service-types"),
-      ]);
+      const [locationsRes, servicesRes, serviceTypesRes, hubsRes] =
+        await Promise.all([
+          axios.get("/api/locations"),
+          axios.get("/api/services"),
+          axios.get("/api/service-types"),
+          axios.get("/api/hubs"),
+        ]);
 
       const fixedLocations = locationsRes.data.map((loc) => {
         if (loc.image && loc.image.startsWith("/uploads")) {
@@ -499,10 +547,11 @@ const NetworkMap = () => {
       setAllLocations(fixedLocations);
       setServices(servicesRes.data);
       setServiceTypes(serviceTypesRes.data);
+      setHubs(hubsRes.data);
 
       setTimeout(() => {
         if (map && olaMaps && isMapLoaded.current) {
-          renderConnections(fixedLocations);
+          renderConnections(fixedLocations, hubs);
         }
       }, 100);
     } catch (error) {
@@ -632,10 +681,11 @@ const NetworkMap = () => {
     }
   };
 
-  const handleMapClick = (coordinates) => {
-    setClickedCoordinates(coordinates);
-    setShowAddModal(true);
-  };
+  // const handleMapClick = (coordinates, screenPosition) => {
+  //   setClickedCoordinates(coordinates);
+  //   setPopupPosition(screenPosition);
+  //   setShowActionPopup(true);
+  // };
 
   const handleLocationCreated = async (newLocation) => {
     try {
@@ -713,10 +763,10 @@ const NetworkMap = () => {
     }
   };
 
-  const handleCloseModal = () => {
-    setShowAddModal(false);
-    setClickedCoordinates(null);
-  };
+  // const handleCloseModal = () => {
+  //   setShowAddModal(false);
+  //   setClickedCoordinates(null);
+  // };
 
   useEffect(() => {
     return () => {
@@ -749,18 +799,79 @@ const NetworkMap = () => {
           detail: { location: data.data, junctionBoxId: junctionBox._id },
         })
       );
-      Swal.fire({
-        title: "Deleted!",
-        text: data.message || "The junction box has been removed.",
-        icon: "success",
-        timer: 1500,
-        showConfirmButton: false,
-      });
+      showToast(
+        "success",
+        data.message || "The junction box has been removed."
+      );
     };
+
+    // const handleSubHubDelete = async (e) => {
+    //   const deleteHub = e.detail.hub;
+    //   const response = await deleteSubHub(deleteHub, user._id);
+    // };
+
     window.addEventListener("delete-junction-box", handleJunctionDelete);
-    return () =>
+    // window.addEventListener("delete-subhub", handleSubHubDelete);
+    return () => {
       window.removeEventListener("delete-junction-box", handleJunctionDelete);
+      // window.removeEventListener("delete-subhub", handleSubHubDelete);
+    };
   }, []);
+
+  useEffect(() => {
+    const handleSubHubDelete = async (e) => {
+      const deleteHub = e.detail.hub;
+      const response = await deleteSubHub(deleteHub, user?.id);
+      const { data } = response;
+      const { deletedHub } = data;
+      handleHubDeleted(deleteHub);
+      removeHubMarker(deletedHub._id);
+      // console.log("DeletedHub ID - : ", deletedHub._id);
+      // setHubs((prev) => prev.filter((hub) => hub._id !== deletedHub._id));
+    };
+    window.addEventListener("delete-subhub", handleSubHubDelete);
+    return () =>
+      window.removeEventListener("delete-subhub", handleSubHubDelete);
+  }, [user?.id, hubs]); // <-- key fix
+
+  const removeHubMarker = (id) => {
+    const marker = hubMarkersRef.current[id];
+    if (marker) {
+      marker.remove();
+      delete hubMarkersRef.current[id];
+    }
+  };
+
+  const handleHubCreated = (newHub) => {
+    setHubs((prev) => [...prev, newHub]);
+  };
+
+  const handleHubDeleted = (deletedHub) => {
+    console.log("hubs :,", hubs);
+    setHubs((prev) => prev.filter((hub) => hub._id !== deletedHub._id));
+    console.log("delted :", hubs);
+  };
+
+  // Handle modal actions
+  const handleAddLocation = () => {
+    closePopup();
+    setShowAddModal(true);
+  };
+
+  const handleAddHub = () => {
+    closePopup();
+    setShowAddHubModal(true);
+  };
+
+  const handleAddArea = () => {
+    closePopup();
+    console.log("Add Area clicked");
+    // Add your Area modal logic here
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+  };
 
   return (
     <div>
@@ -794,6 +905,32 @@ const NetworkMap = () => {
           <SearchBox />
         </div>
       </div>
+
+      {/* Action Popup */}
+      <ActionPopup
+        isOpen={showActionPopup}
+        position={popupPosition}
+        onClose={closePopup}
+        onAddLocation={handleAddLocation}
+        onAddHub={handleAddHub}
+        onAddArea={handleAddArea}
+      />
+
+      {/* Add Location modal */}
+      <AddLocationModal
+        isOpen={showAddModal}
+        onClose={handleCloseModal}
+        coordinates={clickedCoordinates}
+        onLocationCreated={handleLocationCreated}
+      />
+
+      {/* Hub Modal */}
+      <AddHubModal
+        isOpen={showAddHubModal}
+        onClose={() => setShowAddHubModal(false)}
+        coordinates={clickedCoordinates}
+        onHubCreated={handleHubCreated}
+      />
 
       <JunctionModal
         isOpen={modalOpen}

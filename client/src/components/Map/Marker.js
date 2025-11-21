@@ -684,6 +684,245 @@ export const createJunctionBoxMarker = (junction, mapInstance, location) => {
   return marker;
 };
 
+export const createSubHubMarker = (hub, mapInstance) => {
+  const { coordinates, notes, image, createdAt, name } = hub;
+  const { map, olaMaps } = mapInstance;
+
+  // Marker element (different design)
+  const el = document.createElement("div");
+  el.className =
+    "w-9 h-9 flex items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 border-2 border-teal-700 shadow-lg cursor-pointer hover:scale-110 transition-all duration-200";
+  el.title = "Sub-Hub 📡";
+
+  // ICON
+  const span = document.createElement("span");
+  span.className = "text-sm font-bold text-white drop-shadow-md";
+  span.innerText = "📡";
+  el.appendChild(span);
+
+  // Popup container
+  const popupDiv = document.createElement("div");
+  popupDiv.className =
+    "subhub-popup hidden absolute bg-white rounded-xl shadow-xl border border-gray-300 z-50 w-80";
+
+  popupDiv.innerHTML = `
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-3 text-white rounded-t-xl">
+      <div class="flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+          <div class="bg-white/20 p-1.5 rounded-lg">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8c-1.1 0-2 .9-2 2v5h4v-5c0-1.1-.9-2-2-2zM12 3a9 9 0 100 18 9 9 0 000-18z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-base">Sub-Hub</h3>
+            <p class="text-teal-100 text-xs">Connection Distribution Point</p>
+          </div>
+        </div>
+        <button class="close-popup text-white/90 hover:text-white transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content Section -->
+    <div class="p-4 space-y-3">
+
+      <!-- Coordinates -->
+      <div class="space-y-2">
+        <div class="flex items-center text-xs text-gray-600 font-medium">
+          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd"
+              d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z"
+              clip-rule="evenodd"/>
+          </svg>
+          COORDINATES
+        </div>
+
+        <div class="flex space-x-2">
+          <div class="flex-1 bg-gray-50 rounded-lg p-2 border border-gray-200">
+            <div class="text-xs text-gray-500 mb-1">Latitude</div>
+            <div class="font-mono text-sm font-semibold text-gray-800">
+              ${coordinates.latitude.toFixed(6)}
+            </div>
+          </div>
+
+          <div class="flex-1 bg-gray-50 rounded-lg p-2 border border-gray-200">
+            <div class="text-xs text-gray-500 mb-1">Longitude</div>
+            <div class="font-mono text-sm font-semibold text-gray-800">
+              ${coordinates.longitude.toFixed(6)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hub Name -->
+      ${
+        name
+          ? `
+        <div class="space-y-2">
+          <div class="flex items-center text-xs text-gray-600 font-medium">
+            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M7 7h.01M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm4 14h10M7 3v4M17 3v4" />
+            </svg>
+            HUB NAME
+          </div>
+          <div class="bg-blue-50 rounded-lg p-3 border border-blue-200">
+            <p class="text-sm text-gray-700">${name}</p>
+          </div>
+        </div>`
+          : ""
+      }
+      
+      <!-- Notes -->
+      ${
+        notes
+          ? `
+      <div class="space-y-2">
+        <div class="flex items-center text-xs text-gray-600 font-medium">
+          <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+          NOTES
+        </div>
+        <div class="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+          <p class="text-sm text-gray-700">${notes}</p>
+        </div>
+      </div>`
+          : ""
+      }
+
+      <!-- Timestamp -->
+      <div class="flex items-center justify-between pt-2 border-t border-gray-200">
+        <div class="flex items-center text-gray-500 text-xs">
+          <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Created
+        </div>
+        <div class="text-xs text-gray-600 font-medium">
+          ${new Date(createdAt).toLocaleDateString()} • ${new Date(
+    createdAt
+  ).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}
+        </div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex space-x-2 pt-2">
+        ${
+          image
+            ? `
+        <button class="view-image-btn flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          <span>View Image</span>
+        </button>`
+            : '<div class="flex-1"></div>'
+        }
+
+        <button class="delete-subhub-btn flex items-center justify-center space-x-1 px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+          <span>Delete</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(popupDiv);
+
+  let popupOpen = false;
+
+  // Marker click
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+
+    if (!popupOpen) {
+      const screenPos = map.project([
+        coordinates.longitude,
+        coordinates.latitude,
+      ]);
+
+      popupDiv.style.left = `${screenPos.x}px`;
+      popupDiv.style.top = `${screenPos.y}px`;
+      popupDiv.style.transform = "translate(-55px, -220px)";
+
+      popupDiv.classList.remove("hidden");
+      popupOpen = true;
+    } else {
+      popupDiv.classList.add("hidden");
+      popupOpen = false;
+    }
+  });
+
+  // Close popup
+  popupDiv.querySelector(".close-popup").addEventListener("click", () => {
+    popupDiv.classList.add("hidden");
+    popupOpen = false;
+  });
+
+  // View image
+  if (image) {
+    popupDiv.querySelector(".view-image-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      createImageModal([image]);
+    });
+  }
+
+  // Delete Sub-Hub
+  popupDiv
+    .querySelector(".delete-subhub-btn")
+    .addEventListener("click", async (e) => {
+      e.stopPropagation();
+
+      const result = await Swal.fire({
+        title: "Delete Sub-Hub?",
+        text: "This action cannot be undone!",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Yes, Delete",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#d33",
+        cancelButtonColor: "#3085d6",
+      });
+
+      if (result.isConfirmed) {
+        const event = new CustomEvent("delete-subhub", {
+          detail: { hub },
+        });
+
+        window.dispatchEvent(event);
+        popupDiv.classList.add("hidden");
+        popupOpen = false;
+      }
+    });
+
+  // Final: add marker to map
+  const marker = olaMaps
+    .addMarker({ element: el, anchor: "center" })
+    .setLngLat([coordinates.longitude, coordinates.latitude])
+    .addTo(map);
+
+  marker._hubId = hub._id;
+
+  return marker;
+};
+
 export const createMarker = (cls) => {
   // ✅ Marker 1
   const m = document.createElement("div");
