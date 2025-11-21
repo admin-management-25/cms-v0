@@ -32,6 +32,8 @@ import AddHubModal from "../components/AddHubModal";
 import { useActionPopup } from "../components/hooks/useActionPopup";
 import ActionPopup from "../components/ActionPopup";
 import { drawRadiusCircles } from "../components/Map/utils2";
+import AddAreaModal from "../components/AddAreaModal";
+import { Axios } from "axios";
 
 const NetworkMap = () => {
   const [allLocations, setAllLocations] = useState([]);
@@ -45,6 +47,7 @@ const NetworkMap = () => {
   // const [showActionPopup, setShowActionPopup] = useState(false);
   // const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const [showAddHubModal, setShowAddHubModal] = useState(false);
+  const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
   // const [clickedCoordinates, setClickedCoordinates] = useState(null);
   const [success, setSuccess] = useState("");
   const [hoveredLocation, setHoveredLocation] = useState(null);
@@ -692,10 +695,13 @@ const NetworkMap = () => {
     setShowAddHubModal(true);
   };
 
-  const handleAddArea = () => {
-    closePopup();
-    console.log("Add Area clicked");
-    // Add your Area modal logic here
+  const handleAddArea = async () => {
+    try {
+      closePopup();
+      setIsAreaModalOpen(true);
+    } catch (error) {
+      console.log("the reverseGo error : ", error);
+    }
   };
 
   const handleCloseModal = () => {
@@ -759,6 +765,17 @@ const NetworkMap = () => {
         onClose={() => setShowAddHubModal(false)}
         coordinates={clickedCoordinates}
         onHubCreated={handleHubAdded}
+      />
+
+      <AddAreaModal
+        isOpen={isAreaModalOpen}
+        onClose={() => setIsAreaModalOpen(false)}
+        coordinates={clickedCoordinates}
+        onAreaCreated={(newArea) => {
+          // Handle the created area
+          console.log("New Area ;; ", newArea);
+          // setAreas((prev) => [...prev, newArea]);
+        }}
       />
 
       <JunctionModal
