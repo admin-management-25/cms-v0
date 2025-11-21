@@ -14,7 +14,6 @@ import useUserStore from "../store/adminStore";
 import * as turf from "@turf/turf";
 import {
   createLocationMarkerElement,
-  createMarker,
   createSubHubMarker,
 } from "../components/Map/Marker";
 import {
@@ -29,10 +28,10 @@ import {
   updateRoutes,
 } from "../components/Map/utils";
 import JunctionModal from "../components/JunctionModal";
-import Swal from "sweetalert2";
 import AddHubModal from "../components/AddHubModal";
 import { useActionPopup } from "../components/hooks/useActionPopup";
 import ActionPopup from "../components/ActionPopup";
+import { drawRadiusCircles } from "../components/Map/utils2";
 
 const NetworkMap = () => {
   const [allLocations, setAllLocations] = useState([]);
@@ -69,176 +68,12 @@ const NetworkMap = () => {
     closePopup,
   } = useActionPopup(map);
 
-  const EARTH_RADIUS = 6378137;
-
   const locationsForMap = useMemo(() => {
     if (!mapServiceTypeFilter) return filteredLocations;
     return filteredLocations.filter(
       (loc) => loc.serviceType?._id === mapServiceTypeFilter
     );
   }, [filteredLocations, mapServiceTypeFilter]);
-
-  const calculateDestinationPoint = useCallback(
-    (lat, lng, distance, bearing) => {
-      const latRad = (lat * Math.PI) / 180;
-      const lngRad = (lng * Math.PI) / 180;
-      const bearingRad = (bearing * Math.PI) / 180;
-
-      const angularDistance = distance / EARTH_RADIUS;
-
-      const lat2 = Math.asin(
-        Math.sin(latRad) * Math.cos(angularDistance) +
-          Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearingRad)
-      );
-
-      const lng2 =
-        lngRad +
-        Math.atan2(
-          Math.sin(bearingRad) * Math.sin(angularDistance) * Math.cos(latRad),
-          Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(lat2)
-        );
-
-      return {
-        lat: (lat2 * 180) / Math.PI,
-        lng: (lng2 * 180) / Math.PI,
-      };
-    },
-    []
-  );
-
-  const createCircleCoordinates = useCallback(
-    (centerLat, centerLng, radius) => {
-      const points = [];
-      const numPoints = 64;
-
-      for (let i = 0; i <= numPoints; i++) {
-        const bearing = (i * 360) / numPoints;
-        const point = calculateDestinationPoint(
-          centerLat,
-          centerLng,
-          radius,
-          bearing
-        );
-        points.push([point.lng, point.lat]);
-      }
-
-      return points;
-    },
-    [calculateDestinationPoint]
-  );
-
-  const drawRadiusCircles = useCallback(
-    (maxDistance = 1000, interval = 100) => {
-      if (!map || !isMapLoaded.current) return;
-
-      try {
-        safeRemoveLayer(map, "radius-circles-layer");
-        safeRemoveLayer(map, "radius-circles-labels");
-        safeRemoveSource(map, "radius-circles");
-
-        const numCircles = Math.ceil(maxDistance / interval);
-        const circleFeatures = [];
-
-        for (let i = 1; i <= numCircles; i++) {
-          const radius = i * interval;
-          const coordinates = createCircleCoordinates(
-            parseFloat(CENTRAL_HUB.lat),
-            parseFloat(CENTRAL_HUB.lng),
-            radius
-          );
-
-          circleFeatures.push({
-            type: "Feature",
-            geometry: {
-              type: "LineString",
-              coordinates: coordinates,
-            },
-            properties: {
-              radius: radius,
-              opacity: Math.max(0.2, 1 - i * 0.1),
-              color: `rgba(52, 152, 219, ${Math.max(0.2, 1 - i * 0.1)})`,
-            },
-          });
-
-          if (radius % 200 === 0 || radius === interval) {
-            circleFeatures.push({
-              type: "Feature",
-              geometry: {
-                type: "Point",
-                coordinates: [
-                  calculateDestinationPoint(
-                    parseFloat(CENTRAL_HUB.lat),
-                    parseFloat(CENTRAL_HUB.lng),
-                    radius,
-                    0
-                  ).lng,
-                  calculateDestinationPoint(
-                    parseFloat(CENTRAL_HUB.lat),
-                    parseFloat(CENTRAL_HUB.lng),
-                    radius,
-                    0
-                  ).lat,
-                ],
-              },
-              properties: {
-                radius: radius,
-                type: "label",
-                label: `${radius}m`,
-                color: `rgba(52, 152, 219, ${Math.max(0.4, 1 - i * 0.1)})`,
-              },
-            });
-          }
-        }
-
-        map.addSource("radius-circles", {
-          type: "geojson",
-          data: {
-            type: "FeatureCollection",
-            features: circleFeatures,
-          },
-        });
-
-        map.addLayer({
-          id: "radius-circles-layer",
-          type: "line",
-          source: "radius-circles",
-          filter: ["!=", "type", "label"],
-          paint: {
-            "line-color": ["get", "color"],
-            "line-width": 2,
-            "line-dasharray": [2, 2],
-          },
-        });
-
-        map.addLayer({
-          id: "radius-circles-labels",
-          type: "symbol",
-          source: "radius-circles",
-          filter: ["==", "type", "label"],
-          layout: {
-            "text-field": ["get", "label"],
-            "text-size": 12,
-            "text-anchor": "left",
-            "text-offset": [0.5, 0],
-          },
-          paint: {
-            "text-color": ["get", "color"],
-            "text-halo-color": "white",
-            "text-halo-width": 1,
-          },
-        });
-      } catch (error) {
-        console.log("Error drawing radius circles:", error);
-      }
-    },
-    [
-      map,
-      createCircleCoordinates,
-      calculateDestinationPoint,
-      safeRemoveLayer,
-      safeRemoveSource,
-    ]
-  );
 
   const handleJunctionUpdate = (updatedLocation) => {
     setAllLocations((prev) =>
@@ -256,7 +91,7 @@ const NetworkMap = () => {
   };
 
   const renderConnections = useCallback(
-    async (connections, hubs) => {
+    async (connections) => {
       if (!map || !olaMaps || !isMapLoaded.current) return;
 
       try {
@@ -293,14 +128,7 @@ const NetworkMap = () => {
             ])
             .addTo(map);
         }
-        for (let hub of hubs) {
-          const hubMarker = createSubHubMarker(hub, {
-            map,
-            olaMaps,
-            isMapLoaded,
-          });
-          hubMarkersRef.current[hub._id] = hubMarker;
-        }
+
         if (user.geojson && user.geojson !== "null") {
           // Add or update source
           const geojson = user.geojson;
@@ -394,7 +222,11 @@ const NetworkMap = () => {
           500,
           Math.ceil(maxDistance / 100) * 100 + 100
         );
-        drawRadiusCircles(circleMaxDistance, 100);
+        drawRadiusCircles(circleMaxDistance, 100, {
+          map,
+          olaMaps,
+          isMapLoaded,
+        });
       } catch (error) {
         console.log("Error in renderConnections:", error);
       }
@@ -460,10 +292,6 @@ const NetworkMap = () => {
       };
 
       map.on("click", handleClick);
-      // const locs = {
-
-      // }
-      //        createMarker()
 
       map.flyTo({
         center: [parseFloat(CENTRAL_HUB.lng), parseFloat(CENTRAL_HUB.lat)],
@@ -517,7 +345,7 @@ const NetworkMap = () => {
       hubs.length > 0 &&
       locationsForMap.length >= 0
     ) {
-      renderConnections(locationsForMap, hubs);
+      renderConnections(locationsForMap);
     }
   }, [locationsForMap, hubs, map, olaMaps, renderConnections]);
 
@@ -551,7 +379,7 @@ const NetworkMap = () => {
 
       setTimeout(() => {
         if (map && olaMaps && isMapLoaded.current) {
-          renderConnections(fixedLocations, hubs);
+          renderConnections(fixedLocations);
         }
       }, 100);
     } catch (error) {
@@ -681,12 +509,6 @@ const NetworkMap = () => {
     }
   };
 
-  // const handleMapClick = (coordinates, screenPosition) => {
-  //   setClickedCoordinates(coordinates);
-  //   setPopupPosition(screenPosition);
-  //   setShowActionPopup(true);
-  // };
-
   const handleLocationCreated = async (newLocation) => {
     try {
       if (newLocation.image && newLocation.image.startsWith("/uploads")) {
@@ -763,11 +585,6 @@ const NetworkMap = () => {
     }
   };
 
-  // const handleCloseModal = () => {
-  //   setShowAddModal(false);
-  //   setClickedCoordinates(null);
-  // };
-
   useEffect(() => {
     return () => {
       cleanupScheduled.current = true;
@@ -805,17 +622,9 @@ const NetworkMap = () => {
       );
     };
 
-    // const handleSubHubDelete = async (e) => {
-    //   const deleteHub = e.detail.hub;
-    //   const response = await deleteSubHub(deleteHub, user._id);
-    // };
-
     window.addEventListener("delete-junction-box", handleJunctionDelete);
-    // window.addEventListener("delete-subhub", handleSubHubDelete);
-    return () => {
+    return () =>
       window.removeEventListener("delete-junction-box", handleJunctionDelete);
-      // window.removeEventListener("delete-subhub", handleSubHubDelete);
-    };
   }, []);
 
   useEffect(() => {
@@ -824,32 +633,52 @@ const NetworkMap = () => {
       const response = await deleteSubHub(deleteHub, user?.id);
       const { data } = response;
       const { deletedHub } = data;
-      handleHubDeleted(deleteHub);
-      removeHubMarker(deletedHub._id);
-      // console.log("DeletedHub ID - : ", deletedHub._id);
-      // setHubs((prev) => prev.filter((hub) => hub._id !== deletedHub._id));
+      handleHubDeleted(deletedHub);
     };
     window.addEventListener("delete-subhub", handleSubHubDelete);
     return () =>
       window.removeEventListener("delete-subhub", handleSubHubDelete);
   }, [user?.id, hubs]); // <-- key fix
 
-  const removeHubMarker = (id) => {
-    const marker = hubMarkersRef.current[id];
-    if (marker) {
-      marker.remove();
-      delete hubMarkersRef.current[id];
+  const handleHubAdded = (newHub) => {
+    setHubs((prevHubs) => [...prevHubs, newHub]);
+
+    const hubMarker = createSubHubMarker(newHub, {
+      map,
+      olaMaps,
+      isMapLoaded,
+    });
+    hubMarkersRef.current[newHub._id] = hubMarker;
+  };
+
+  const addHubMarkers = () => {
+    if (!hubs.length || Object.keys(hubMarkersRef.current).length > 0) return;
+
+    for (let hub of hubs) {
+      const hubMarker = createSubHubMarker(hub, {
+        map,
+        olaMaps,
+        isMapLoaded,
+      });
+      hubMarkersRef.current[hub._id] = hubMarker;
     }
   };
 
-  const handleHubCreated = (newHub) => {
-    setHubs((prev) => [...prev, newHub]);
-  };
+  useEffect(() => {
+    if (!map || !olaMaps || !isMapLoaded) return;
+
+    addHubMarkers();
+  }, [hubs, map, olaMaps, isMapLoaded]);
 
   const handleHubDeleted = (deletedHub) => {
-    console.log("hubs :,", hubs);
-    setHubs((prev) => prev.filter((hub) => hub._id !== deletedHub._id));
-    console.log("delted :", hubs);
+    // Remove from map
+    const marker = hubMarkersRef.current[deletedHub._id];
+    if (marker) {
+      console.log("Marker found, removing:", marker);
+      marker.remove();
+      delete hubMarkersRef.current[deletedHub._id];
+    }
+    setHubs((prevHubs) => prevHubs.filter((hub) => hub._id !== deletedHub._id));
   };
 
   // Handle modal actions
@@ -929,7 +758,7 @@ const NetworkMap = () => {
         isOpen={showAddHubModal}
         onClose={() => setShowAddHubModal(false)}
         coordinates={clickedCoordinates}
-        onHubCreated={handleHubCreated}
+        onHubCreated={handleHubAdded}
       />
 
       <JunctionModal
