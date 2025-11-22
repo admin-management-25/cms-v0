@@ -1,4 +1,4 @@
-// App.js - UPDATED
+// App.js - UPDATED with AreaNames
 import {
   BrowserRouter as Router,
   Routes,
@@ -12,7 +12,8 @@ import Login from "./components/Login";
 import Dashboard from "./pages/Dashboard";
 import NetworkMap from "./pages/NetworkMap";
 import Locations from "./pages/Locations";
-import Hubs from "./pages/Hubs"; // ← NEW IMPORT
+import Hubs from "./pages/Hubs";
+import AreaNames from "./pages/AreaNames"; // ← NEW IMPORT
 import Services from "./pages/Services";
 import ServiceTypes from "./pages/ServiceTypes";
 import "./App.css";
@@ -58,13 +59,23 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* ✅ NEW: Hubs Route */}
             <Route
               path="/hubs"
               element={
                 <ProtectedRoute>
                   <Layout>
                     <Hubs />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            {/* ✅ NEW: AreaNames Route */}
+            <Route
+              path="/area-names"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <AreaNames />
                   </Layout>
                 </ProtectedRoute>
               }
