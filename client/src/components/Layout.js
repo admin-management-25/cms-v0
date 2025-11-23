@@ -1,4 +1,4 @@
-// components/Layout.js - UPDATED
+// components/Layout.js - UPDATED with AreaNames
 "use client";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -12,7 +12,8 @@ import {
   LogOut,
   Menu,
   X,
-  Building2, // Added for Hubs icon
+  Building2,
+  MapPinned, // Added for Area Names icon
 } from "lucide-react";
 import useUserStore from "../store/adminStore";
 
@@ -33,12 +34,13 @@ const Layout = ({ children }) => {
     navigate("/login");
   };
 
-  // ✅ UPDATED: Added Hubs to navigation
+  // ✅ UPDATED: Added AreaNames to navigation
   const navigationItems = [
     { path: "/dashboard", label: "Home", icon: Home },
     { path: "/network-map", label: "Network Map", icon: Map },
     { path: "/locations", label: "Locations", icon: MapPin },
-    { path: "/hubs", label: "Hubs", icon: Building2 }, // ← NEW
+    { path: "/hubs", label: "Hubs", icon: Building2 },
+    { path: "/area-names", label: "Area Names", icon: MapPinned }, // ← NEW
     { path: "/services", label: "Services", icon: Settings },
     { path: "/service-types", label: "Service Types", icon: Wrench },
   ];
