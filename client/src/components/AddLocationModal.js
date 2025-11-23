@@ -52,8 +52,10 @@ const AddLocationModal = ({
     name: "Central Hub",
     type: "default",
     id: null,
+    junctionBoxId: null,
     coordinates: null,
   });
+  const [expandedLocations, setExpandedLocations] = useState(new Set());
 
   // Calculate nearby locations and hubs
   const nearbyData = useMemo(() => {
@@ -109,10 +111,12 @@ const AddLocationModal = ({
       setImagePreview2(null);
       setError("");
       setShowNearby(true);
+      setExpandedLocations(new Set());
       setStartingPoint({
         name: "Central Hub",
         type: "default",
         id: null,
+        junctionBoxId: null,
         coordinates: null,
       });
     }
@@ -141,6 +145,28 @@ const AddLocationModal = ({
       setError("Failed to fetch data");
       console.error("Error fetching data:", error);
     }
+  };
+
+  const toggleLocationExpansion = (locationId) => {
+    setExpandedLocations((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(locationId)) {
+        newSet.delete(locationId);
+      } else {
+        newSet.add(locationId);
+      }
+      return newSet;
+    });
+  };
+
+  const resetStartingPoint = () => {
+    setStartingPoint({
+      name: "Central Hub",
+      type: "default",
+      id: null,
+      junctionBoxId: null,
+      coordinates: null,
+    });
   };
 
   const handleImageChange = (e) => {
@@ -292,17 +318,49 @@ const AddLocationModal = ({
             marginBottom: "20px",
           }}
         >
-          <h3
+          <div
             style={{
-              margin: 0,
-              fontSize: "16px",
-              color: "#e65100",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
               marginBottom: "12px",
-              fontWeight: "600",
             }}
           >
-            🚀 Starts From
-          </h3>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "16px",
+                color: "#e65100",
+                fontWeight: "600",
+              }}
+            >
+              🚀 Starts From
+            </h3>
+            {startingPoint.type !== "default" && (
+              <button
+                onClick={resetStartingPoint}
+                style={{
+                  background: "#ff5722",
+                  color: "white",
+                  border: "none",
+                  padding: "4px 12px",
+                  borderRadius: "6px",
+                  fontSize: "11px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#d84315";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#ff5722";
+                }}
+              >
+                Reset to Central Hub
+              </button>
+            )}
+          </div>
           <div
             style={{
               background: "white",
@@ -320,7 +378,11 @@ const AddLocationModal = ({
               <div
                 style={{ fontSize: "11px", color: "#999", marginTop: "4px" }}
               >
-                {startingPoint.type === "hub" ? "🏢 Hub" : "📍 Location"}
+                {startingPoint.type === "hub"
+                  ? "🏢 Hub"
+                  : startingPoint.junctionBoxId
+                  ? "📦 Junction Box"
+                  : "📍 Location"}
               </div>
             )}
           </div>
@@ -399,87 +461,228 @@ const AddLocationModal = ({
                       }}
                     >
                       {nearbyData.locations.map((loc) => (
-                        <div
-                          key={loc._id}
-                          onClick={() =>
-                            setStartingPoint({
-                              name: `${loc.serviceName?.name || "Unknown"} - ${
-                                loc.serviceType?.name || ""
-                              }`,
-                              type: "location",
-                              id: loc._id,
-                              coordinates: loc.coordinates,
-                            })
-                          }
-                          style={{
-                            background:
-                              startingPoint.id === loc._id
-                                ? "#c8e6c9"
-                                : "white",
-                            padding: "10px",
-                            borderRadius: "6px",
-                            fontSize: "12px",
-                            border:
-                              startingPoint.id === loc._id
-                                ? "2px solid #4caf50"
-                                : "1px solid #c8e6c9",
-                            cursor: "pointer",
-                            transition: "all 0.2s",
-                          }}
-                          onMouseEnter={(e) => {
-                            if (startingPoint.id !== loc._id) {
-                              e.currentTarget.style.background = "#f1f8f1";
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (startingPoint.id !== loc._id) {
-                              e.currentTarget.style.background = "white";
-                            }
-                          }}
-                        >
+                        <div key={loc._id}>
+                          {/* Main Location */}
                           <div
+                            onClick={() =>
+                              setStartingPoint({
+                                name: `${
+                                  loc.serviceName?.name || "Unknown"
+                                } - ${loc.serviceType?.name || ""}`,
+                                type: "location",
+                                id: loc._id,
+                                junctionBoxId: null,
+                                coordinates: loc.coordinates,
+                              })
+                            }
                             style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "start",
+                              background:
+                                startingPoint.id === loc._id &&
+                                !startingPoint.junctionBoxId
+                                  ? "#c8e6c9"
+                                  : "white",
+                              padding: "10px",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              border:
+                                startingPoint.id === loc._id &&
+                                !startingPoint.junctionBoxId
+                                  ? "2px solid #4caf50"
+                                  : "1px solid #c8e6c9",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (
+                                startingPoint.id !== loc._id ||
+                                startingPoint.junctionBoxId
+                              ) {
+                                e.currentTarget.style.background = "#f1f8f1";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (
+                                startingPoint.id !== loc._id ||
+                                startingPoint.junctionBoxId
+                              ) {
+                                e.currentTarget.style.background = "white";
+                              }
                             }}
                           >
-                            <div style={{ flex: 1 }}>
-                              <div
-                                style={{ fontWeight: "600", color: "#2e7d32" }}
-                              >
-                                {loc.serviceName?.name || "Unknown Service"}
-                              </div>
-                              <div style={{ color: "#666", fontSize: "11px" }}>
-                                {loc.serviceType?.icon} {loc.serviceType?.name}
-                              </div>
-                              {loc.notes && (
-                                <div
-                                  style={{
-                                    color: "#999",
-                                    fontSize: "11px",
-                                    marginTop: "4px",
-                                  }}
-                                >
-                                  {loc.notes.substring(0, 50)}
-                                  {loc.notes.length > 50 ? "..." : ""}
-                                </div>
-                              )}
-                            </div>
                             <div
                               style={{
-                                background: "#4caf50",
-                                color: "white",
-                                padding: "4px 8px",
-                                borderRadius: "12px",
-                                fontSize: "11px",
-                                fontWeight: "600",
-                                whiteSpace: "nowrap",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "start",
                               }}
                             >
-                              {loc.distance.toFixed(0)}m away
+                              <div style={{ flex: 1 }}>
+                                <div
+                                  style={{
+                                    fontWeight: "600",
+                                    color: "#2e7d32",
+                                  }}
+                                >
+                                  {loc.serviceName?.name || "Unknown Service"}
+                                </div>
+                                <div
+                                  style={{ color: "#666", fontSize: "11px" }}
+                                >
+                                  {loc.serviceType?.icon}{" "}
+                                  {loc.serviceType?.name}
+                                </div>
+                                {loc.notes && (
+                                  <div
+                                    style={{
+                                      color: "#999",
+                                      fontSize: "11px",
+                                      marginTop: "4px",
+                                    }}
+                                  >
+                                    {loc.notes.substring(0, 50)}
+                                    {loc.notes.length > 50 ? "..." : ""}
+                                  </div>
+                                )}
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    background: "#4caf50",
+                                    color: "white",
+                                    padding: "4px 8px",
+                                    borderRadius: "12px",
+                                    fontSize: "11px",
+                                    fontWeight: "600",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {loc.distance.toFixed(0)}m away
+                                </div>
+                                {loc.junctionBox &&
+                                  loc.junctionBox.length > 0 && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleLocationExpansion(loc._id);
+                                      }}
+                                      style={{
+                                        background: "#2196f3",
+                                        color: "white",
+                                        border: "none",
+                                        padding: "4px 8px",
+                                        borderRadius: "12px",
+                                        fontSize: "11px",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      📦 {loc.junctionBox.length}{" "}
+                                      {expandedLocations.has(loc._id)
+                                        ? "▲"
+                                        : "▼"}
+                                    </button>
+                                  )}
+                              </div>
                             </div>
                           </div>
+
+                          {/* Junction Boxes - Expandable */}
+                          {loc.junctionBox &&
+                            loc.junctionBox.length > 0 &&
+                            expandedLocations.has(loc._id) && (
+                              <div
+                                style={{
+                                  marginLeft: "20px",
+                                  marginTop: "4px",
+                                  borderLeft: "2px solid #2196f3",
+                                  paddingLeft: "8px",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "4px",
+                                }}
+                              >
+                                {loc.junctionBox.map((jb, index) => (
+                                  <div
+                                    key={jb._id}
+                                    onClick={() =>
+                                      setStartingPoint({
+                                        name: `Junction Box ${index + 1} (${
+                                          loc.serviceName?.name || "Unknown"
+                                        })`,
+                                        type: "location",
+                                        id: loc._id,
+                                        junctionBoxId: jb._id,
+                                        coordinates: jb.coordinates,
+                                      })
+                                    }
+                                    style={{
+                                      background:
+                                        startingPoint.junctionBoxId === jb._id
+                                          ? "#bbdefb"
+                                          : "#f5f5f5",
+                                      padding: "6px 8px",
+                                      borderRadius: "4px",
+                                      fontSize: "11px",
+                                      border:
+                                        startingPoint.junctionBoxId === jb._id
+                                          ? "2px solid #2196f3"
+                                          : "1px solid #e0e0e0",
+                                      cursor: "pointer",
+                                      transition: "all 0.2s",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (
+                                        startingPoint.junctionBoxId !== jb._id
+                                      ) {
+                                        e.currentTarget.style.background =
+                                          "#e3f2fd";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (
+                                        startingPoint.junctionBoxId !== jb._id
+                                      ) {
+                                        e.currentTarget.style.background =
+                                          "#f5f5f5";
+                                      }
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        fontWeight: "600",
+                                        color: "#1976d2",
+                                        marginBottom: "2px",
+                                      }}
+                                    >
+                                      📦 Junction Box {index + 1}
+                                    </div>
+                                    {jb.notes && (
+                                      <div style={{ color: "#666" }}>
+                                        {jb.notes.substring(0, 40)}
+                                        {jb.notes.length > 40 ? "..." : ""}
+                                      </div>
+                                    )}
+                                    <div
+                                      style={{
+                                        color: "#999",
+                                        fontSize: "10px",
+                                        marginTop: "2px",
+                                      }}
+                                    >
+                                      Lat: {jb.coordinates.latitude.toFixed(5)},
+                                      Lon: {jb.coordinates.longitude.toFixed(5)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                         </div>
                       ))}
                     </div>
@@ -517,6 +720,7 @@ const AddLocationModal = ({
                               name: hub.name,
                               type: "hub",
                               id: hub._id,
+                              junctionBoxId: null,
                               coordinates: hub.coordinates,
                             })
                           }
