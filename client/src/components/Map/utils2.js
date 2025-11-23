@@ -1,5 +1,11 @@
 import { CENTRAL_HUB } from "./MapProvider";
-import { safeRemoveLayer, safeRemoveSource } from "./utils";
+import {
+  safeRemoveLayer,
+  safeRemoveSource,
+  isMapValid,
+  sourceExists,
+  layerExists,
+} from "./utils";
 
 export const calculateDestinationPoint = (lat, lng, distance, bearing) => {
   const latRad = (lat * Math.PI) / 180;
@@ -45,18 +51,37 @@ export const createCircleCoordinates = (centerLat, centerLng, radius) => {
   return points;
 };
 
+//utils2.js
 export const drawRadiusCircles = (
   maxDistance = 1000,
   interval = 100,
   mapInstance
 ) => {
   const { map, isMapLoaded } = mapInstance;
-  if (!map || !isMapLoaded.current) return;
+  if (!map || !isMapLoaded?.current) return;
+  console.log("drawRadiusCircle is callin");
+
+  if (!isMapValid(map) || !isMapLoaded?.current) {
+    console.debug("Map not ready for drawing radius circles");
+    return false;
+  }
 
   try {
-    safeRemoveLayer(map, "radius-circles-layer");
+    // Clean up existing layers/sources in correct order
     safeRemoveLayer(map, "radius-circles-labels");
+    safeRemoveLayer(map, "radius-circles-layer");
     safeRemoveSource(map, "radius-circles");
+
+    // Double-check source doesn't exist before adding
+    if (sourceExists(map, "radius-circles")) {
+      console.warn("radius-circles source still exists, forcing removal");
+      try {
+        map.removeSource("radius-circles");
+      } catch (e) {
+        console.error("Could not force remove source:", e);
+        return false;
+      }
+    }
 
     const numCircles = Math.ceil(maxDistance / interval);
     const circleFeatures = [];
@@ -83,24 +108,18 @@ export const drawRadiusCircles = (
       });
 
       if (radius % 200 === 0 || radius === interval) {
+        const destPoint = calculateDestinationPoint(
+          parseFloat(CENTRAL_HUB.lat),
+          parseFloat(CENTRAL_HUB.lng),
+          radius,
+          0
+        );
+
         circleFeatures.push({
           type: "Feature",
           geometry: {
             type: "Point",
-            coordinates: [
-              calculateDestinationPoint(
-                parseFloat(CENTRAL_HUB.lat),
-                parseFloat(CENTRAL_HUB.lng),
-                radius,
-                0
-              ).lng,
-              calculateDestinationPoint(
-                parseFloat(CENTRAL_HUB.lat),
-                parseFloat(CENTRAL_HUB.lng),
-                radius,
-                0
-              ).lat,
-            ],
+            coordinates: [destPoint.lng, destPoint.lat],
           },
           properties: {
             radius: radius,
@@ -112,6 +131,7 @@ export const drawRadiusCircles = (
       }
     }
 
+    // Add source
     map.addSource("radius-circles", {
       type: "geojson",
       data: {
@@ -120,6 +140,7 @@ export const drawRadiusCircles = (
       },
     });
 
+    // Add circle lines layer
     map.addLayer({
       id: "radius-circles-layer",
       type: "line",
@@ -132,6 +153,7 @@ export const drawRadiusCircles = (
       },
     });
 
+    // Add labels layer
     map.addLayer({
       id: "radius-circles-labels",
       type: "symbol",
@@ -149,7 +171,20 @@ export const drawRadiusCircles = (
         "text-halo-width": 1,
       },
     });
+
+    return true;
   } catch (error) {
-    console.log("Error drawing radius circles:", error);
+    console.error("Error drawing radius circles:", error);
+    return false;
   }
+};
+
+// Cleanup function
+export const cleanupRadiusCircles = (mapInstance) => {
+  const { map } = mapInstance;
+  if (!isMapValid(map)) return;
+
+  safeRemoveLayer(map, "radius-circles-labels");
+  safeRemoveLayer(map, "radius-circles-layer");
+  safeRemoveSource(map, "radius-circles");
 };

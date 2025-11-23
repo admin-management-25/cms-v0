@@ -1,17 +1,149 @@
-import { useEffect, useState } from "react";
-import { X, MapPin, Compass } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { X, MapPin, Compass, Circle, Plus, Minus } from "lucide-react";
 import axios from "./axios";
 import { showToast } from "./Map/utils";
 import { useReverseGeocode } from "./hooks/useReverseGeocode";
 
-const AddAreaModal = ({ isOpen, onClose, coordinates, onAreaCreated }) => {
+const AddAreaModal = ({ isOpen, onClose, coordinates, onAreaCreated, map }) => {
   const [areaName, setAreaName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPolygon, setShowPolygon] = useState(false);
+  const [polygonRadius, setPolygonRadius] = useState(500);
   const { loading, error, addresses, reverseGeocode } = useReverseGeocode();
+
+  // ✅ Safe removal functions
+  const safeRemoveLayer = useCallback((mapInstance, layerId) => {
+    try {
+      if (!mapInstance || typeof mapInstance.getLayer !== "function")
+        return false;
+      const layer = mapInstance.getLayer(layerId);
+      if (layer) {
+        mapInstance.removeLayer(layerId);
+        return true;
+      }
+    } catch (error) {
+      console.debug(`Could not remove layer ${layerId}:`, error);
+      return false;
+    }
+    return false;
+  }, []);
+
+  const safeRemoveSource = useCallback((mapInstance, sourceId) => {
+    try {
+      if (!mapInstance || typeof mapInstance.getSource !== "function")
+        return false;
+      const source = mapInstance.getSource(sourceId);
+      if (source) {
+        mapInstance.removeSource(sourceId);
+        return true;
+      }
+    } catch (error) {
+      console.debug(`Could not remove source ${sourceId}:`, error);
+      return false;
+    }
+    return false;
+  }, []);
+
+  const generateCirclePolygon = (center, radiusInMeters, points = 64) => {
+    const coords = [];
+    const earthRadius = 6371000;
+
+    for (let i = 0; i <= points; i++) {
+      const angle = (i / points) * 2 * Math.PI;
+      const dx = radiusInMeters * Math.cos(angle);
+      const dy = radiusInMeters * Math.sin(angle);
+
+      const deltaLat = dy / earthRadius;
+      const deltaLon =
+        dx / (earthRadius * Math.cos((center.latitude * Math.PI) / 180));
+
+      const lat = center.latitude + (deltaLat * 180) / Math.PI;
+      const lon = center.longitude + (deltaLon * 180) / Math.PI;
+
+      coords.push([lon, lat]);
+    }
+
+    return coords;
+  };
+
+  // ✅ FIXED - Update polygon with safety checks
+  const updatePolygonOnMap = useCallback(() => {
+    if (
+      !map ||
+      typeof map.getLayer !== "function" ||
+      !coordinates ||
+      !showPolygon
+    ) {
+      // Clean up if hiding
+      try {
+        if (map) {
+          safeRemoveLayer(map, "temp-polygon-outline");
+          safeRemoveLayer(map, "temp-polygon-layer");
+          safeRemoveSource(map, "temp-polygon");
+        }
+      } catch (error) {
+        console.debug("Cleanup error:", error);
+      }
+      return;
+    }
+
+    const sourceId = "temp-polygon";
+    const layerId = "temp-polygon-layer";
+    const outlineId = "temp-polygon-outline";
+
+    try {
+      // Remove existing using safe functions
+      safeRemoveLayer(map, outlineId);
+      safeRemoveLayer(map, layerId);
+      safeRemoveSource(map, sourceId);
+
+      const polygonCoords = generateCirclePolygon(coordinates, polygonRadius);
+
+      map.addSource(sourceId, {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Polygon",
+            coordinates: [polygonCoords],
+          },
+        },
+      });
+
+      map.addLayer({
+        id: layerId,
+        type: "fill",
+        source: sourceId,
+        paint: {
+          "fill-color": "#10b981",
+          "fill-opacity": 0.3,
+        },
+      });
+
+      map.addLayer({
+        id: outlineId,
+        type: "line",
+        source: sourceId,
+        paint: {
+          "line-color": "#059669",
+          "line-width": 2,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating polygon on map:", error);
+    }
+  }, [
+    map,
+    coordinates,
+    showPolygon,
+    polygonRadius,
+    safeRemoveLayer,
+    safeRemoveSource,
+  ]);
 
   useEffect(() => {
     if (!coordinates) return;
-
     const fetchAddress = async () => {
       try {
         await reverseGeocode(coordinates.latitude, coordinates.longitude);
@@ -19,9 +151,27 @@ const AddAreaModal = ({ isOpen, onClose, coordinates, onAreaCreated }) => {
         console.log("Error While doing reverseGeoCode : ", error);
       }
     };
-
     fetchAddress();
   }, [coordinates]);
+
+  useEffect(() => {
+    updatePolygonOnMap();
+  }, [updatePolygonOnMap]);
+
+  // ✅ FIXED - Cleanup with safety checks
+  useEffect(() => {
+    return () => {
+      if (!map || typeof map.getLayer !== "function") return;
+
+      try {
+        safeRemoveLayer(map, "temp-polygon-outline");
+        safeRemoveLayer(map, "temp-polygon-layer");
+        safeRemoveSource(map, "temp-polygon");
+      } catch (error) {
+        console.debug("Cleanup error (ignored):", error);
+      }
+    };
+  }, [map, safeRemoveLayer, safeRemoveSource]);
 
   if (!isOpen) return null;
 
@@ -30,13 +180,21 @@ const AddAreaModal = ({ isOpen, onClose, coordinates, onAreaCreated }) => {
     setIsSubmitting(true);
 
     try {
+      const polygonCoords = showPolygon
+        ? generateCirclePolygon(coordinates, polygonRadius)
+        : null;
+
       const areaData = {
         name: areaName,
         latitude: coordinates?.latitude,
         longitude: coordinates?.longitude,
+        polygon: showPolygon
+          ? {
+              radius: polygonRadius,
+              coordinates: polygonCoords,
+            }
+          : null,
       };
-
-      console.log("Submitting Area data:", areaData);
 
       const response = await axios.post("/api/area-names", areaData, {
         headers: {
@@ -61,8 +219,21 @@ const AddAreaModal = ({ isOpen, onClose, coordinates, onAreaCreated }) => {
     }
   };
 
+  // ✅ FIXED - Reset form with safety checks
   const resetForm = () => {
     setAreaName("");
+    setShowPolygon(false);
+    setPolygonRadius(500);
+
+    try {
+      if (map && typeof map.getLayer === "function") {
+        safeRemoveLayer(map, "temp-polygon-outline");
+        safeRemoveLayer(map, "temp-polygon-layer");
+        safeRemoveSource(map, "temp-polygon");
+      }
+    } catch (error) {
+      console.debug("Reset form cleanup error:", error);
+    }
   };
 
   const handleClose = () => {
@@ -70,291 +241,248 @@ const AddAreaModal = ({ isOpen, onClose, coordinates, onAreaCreated }) => {
     onClose();
   };
 
+  const increaseRadius = () => {
+    setPolygonRadius((prev) => Math.min(prev + 100, 5000));
+  };
+
+  const decreaseRadius = () => {
+    setPolygonRadius((prev) => Math.max(prev - 100, 100));
+  };
+
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4"
-      onClick={handleClose}
-    >
-      <div
-        className="bg-white rounded-lg p-6 w-full max-w-2xl shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Compass className="w-6 h-6 text-green-600" />
-            <h2 className="text-xl font-semibold text-gray-900">
-              Add New Area
-            </h2>
+    <div className="fixed top-0 right-0 h-full w-[450px] bg-white shadow-2xl z-[2000] overflow-y-auto">
+      {/* Header */}
+      <div className="sticky top-0 bg-gradient-to-r from-green-600 to-emerald-600 text-white p-4 shadow-md z-10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+              <Compass className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold">Add New Area</h2>
+              <p className="text-xs text-green-100">Define location coverage</p>
+            </div>
           </div>
           <button
             onClick={handleClose}
-            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-2 hover:bg-white/20 rounded-lg transition-colors"
             disabled={isSubmitting}
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5" />
           </button>
         </div>
+      </div>
 
-        {/* ///geo/// */}
-
+      <div className="p-4 space-y-4">
+        {/* Reverse Geocode Addresses */}
         {!loading && !error && addresses.length > 0 && (
-          <div className="mt-4">
-            <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 shadow-sm">
-              {/* Enhanced Sticky Header */}
-              <div className="sticky top-0 z-10 bg-gradient-to-r from-green-500 to-emerald-600 border-b border-green-600">
-                <div className="py-3 px-4 text-center">
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="flex-shrink-0 w-5 h-5 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                      <svg
-                        className="w-3 h-3 text-white"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </div>
-                    <span className="text-white font-semibold text-base tracking-wide">
-                      Verified Addresses
-                    </span>
-                    <span className="bg-white bg-opacity-20 text-white text-xs font-medium px-2 py-1 rounded-full">
-                      {addresses.length}
-                    </span>
-                  </div>
-                </div>
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                <span className="text-white text-xs font-bold">✓</span>
               </div>
-              {/* Address List */}
-              <div className="space-y-3 p-4">
-                {addresses.map((addr, i) => (
-                  <div
-                    key={i}
-                    className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 hover:border-green-300"
-                    onClick={() => setAreaName(addr.address)}
-                  >
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center mt-0.5">
-                        <span className="text-white text-xs font-bold">✓</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-800 text-lg mb-1 flex items-center">
-                          {addr.name}
-                          <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-                            Verified
-                          </span>
-                        </p>
-                        <p className="text-gray-600 text-sm leading-relaxed">
-                          {addr.address}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <span className="text-sm font-semibold text-green-800">
+                Suggested Addresses ({addresses.length})
+              </span>
             </div>
-            <p className="text-xs text-gray-500 text-center mt-2">
-              Showing {addresses.length} address
-              {addresses.length !== 1 ? "es" : ""}
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {addresses.map((addr, i) => (
+                <div
+                  key={i}
+                  className="p-2 bg-white border border-green-200 rounded-md hover:border-green-400 cursor-pointer transition-colors"
+                  onClick={() => setAreaName(addr.address)}
+                >
+                  <p className="text-xs font-semibold text-gray-800">
+                    {addr.name}
+                  </p>
+                  <p className="text-xs text-gray-600 truncate">
+                    {addr.address}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Click to use as area name
             </p>
           </div>
         )}
-        {/* ///geo/// */}
 
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            {/* Selected Address Area */}
-            {/* Enhanced Address Area with Attractive Styling */}
-            <div className="space-y-4">
-              {/* Header Section */}
-              <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl border border-green-200">
-                <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-sm">
-                  <svg
-                    className="w-4 h-4 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold text-gray-800 tracking-wide">
-                    ADDRESS AREA NAME
-                  </label>
-                  <p className="text-xs text-gray-600 mt-0.5">
-                    Give a unique name to identify this location group
-                  </p>
-                </div>
-                <span className="px-2.5 py-1 bg-green-500 text-white text-xs font-bold rounded-full shadow-sm">
-                  REQUIRED
-                </span>
-              </div>
-
-              {/* Textarea Section */}
-              <div className="relative group">
-                <textarea
-                  value={areaName}
-                  onChange={(e) => setAreaName(e.target.value)}
-                  placeholder="🏙️ Enter a descriptive name (e.g., Downtown Business District, Residential Zone A, Commercial Hub...)"
-                  required
-                  rows={3}
-                  className="w-full px-5 py-5 pl-14 border-2 border-gray-300 rounded-2xl focus:outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100 transition-all duration-300 placeholder-gray-400 group-hover:border-green-400 text-base resize-none bg-white shadow-sm font-medium"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)",
-                  }}
-                />
-
-                {/* Enhanced Location Icon */}
-                <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500 group-focus-within:text-green-500 transition-colors duration-300">
-                  <div className="w-8 h-8 bg-gradient-to-br from-gray-100 to-gray-200 group-focus-within:from-green-100 group-focus-within:to-green-200 rounded-lg flex items-center justify-center shadow-inner">
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Enhanced Clear Button */}
-                {areaName && (
-                  <button
-                    type="button"
-                    onClick={() => setAreaName("")}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-gradient-to-br from-red-500 to-red-600 text-white rounded-xl p-2 hover:from-red-600 hover:to-red-700 transition-all duration-300 shadow-md hover:shadow-lg hover:scale-110"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
-                )}
-              </div>
-
-              {/* Footer with Character Count and Tips */}
-              <div className="flex justify-between items-center px-2">
-                <div className="flex items-center space-x-2">
-                  <svg
-                    className="w-4 h-4 text-green-500"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  <span className="text-xs text-gray-600 font-medium">
-                    Tip: Use descriptive names like "North Zone" or "City
-                    Center"
-                  </span>
-                </div>
-                <div
-                  className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    areaName.length > 200
-                      ? "bg-red-100 text-red-700"
-                      : areaName.length > 150
-                      ? "bg-yellow-100 text-yellow-700"
-                      : areaName.length > 50
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-green-100 text-green-700"
-                  }`}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Area Name Input */}
+          <div>
+            <label className="block text-sm font-bold text-gray-800 mb-2">
+              Area Name <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <textarea
+                value={areaName}
+                onChange={(e) => setAreaName(e.target.value)}
+                placeholder="Enter area name (e.g., Downtown District, North Zone...)"
+                required
+                rows={3}
+                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition-all resize-none text-sm"
+              />
+              {areaName && (
+                <button
+                  type="button"
+                  onClick={() => setAreaName("")}
+                  className="absolute right-2 top-2 p-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors"
                 >
-                  {areaName.length}/250
-                </div>
-              </div>
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
-
-            {/* Coordinates Display */}
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-gray-500 mt-0.5" />
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Coordinates:</p>
-                  <p className="text-sm font-mono text-gray-900">
-                    {coordinates?.latitude?.toFixed(6)},{" "}
-                    {coordinates?.longitude?.toFixed(6)}
-                  </p>
-                </div>
-              </div>
+            <div className="flex justify-between items-center mt-1">
+              <span className="text-xs text-gray-500">
+                Use descriptive names
+              </span>
+              <span
+                className={`text-xs font-semibold ${
+                  areaName.length > 200
+                    ? "text-red-600"
+                    : areaName.length > 150
+                    ? "text-yellow-600"
+                    : "text-green-600"
+                }`}
+              >
+                {areaName.length}/250
+              </span>
             </div>
           </div>
+
+          {/* Coordinates Display */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <MapPin className="w-4 h-4 text-gray-500" />
+              <span className="text-xs font-semibold text-gray-700">
+                Center Point
+              </span>
+            </div>
+            <p className="text-xs font-mono text-gray-900">
+              {coordinates?.latitude?.toFixed(6)},{" "}
+              {coordinates?.longitude?.toFixed(6)}
+            </p>
+          </div>
+
+          {/* Polygon Section */}
+          <div className="border-2 border-dashed border-green-300 rounded-lg p-3 bg-green-50">
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-green-600" />
+                  <span className="text-sm font-bold text-gray-800">
+                    Coverage Area
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPolygon(!showPolygon)}
+                  className={`px-3 py-1 text-xs rounded-md font-semibold transition-all ${
+                    showPolygon
+                      ? "bg-green-600 text-white"
+                      : "bg-gray-200 text-gray-700"
+                  }`}
+                >
+                  {showPolygon ? "ACTIVE" : "INACTIVE"}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 ml-6">
+                Define a coverage area to show relevant connections in the
+                filter results.
+              </p>
+            </div>
+
+            {showPolygon && (
+              <div className="space-y-3">
+                <div className="text-center bg-white rounded-lg p-3 border border-green-200">
+                  <p className="text-xs text-gray-600 mb-1">Radius</p>
+                  <p className="text-xl font-bold text-green-700">
+                    {polygonRadius >= 1000
+                      ? `${(polygonRadius / 1000).toFixed(1)} km`
+                      : `${polygonRadius} m`}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={decreaseRadius}
+                    disabled={polygonRadius <= 100}
+                    className="flex items-center justify-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                  >
+                    <Minus className="w-4 h-4" />
+                    Shrink
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={increaseRadius}
+                    disabled={polygonRadius >= 5000}
+                    className="flex items-center justify-center gap-1 px-3 py-2 bg-green-100 text-green-700 rounded-md hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Expand
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                  {[200, 500, 1000, 2000].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setPolygonRadius(preset)}
+                      className={`px-2 py-1 text-xs rounded-md font-medium transition-colors ${
+                        polygonRadius === preset
+                          ? "bg-green-600 text-white"
+                          : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      {preset >= 1000 ? `${preset / 1000}km` : `${preset}m`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {loading && (
-            <div className="text-center text-sm text-gray-500">
+            <div className="text-center text-sm text-gray-500 py-2">
               Fetching address...
             </div>
           )}
 
           {error && (
-            <div className="bg-red-100 text-red-800 p-2 rounded-md text-sm">
+            <div className="bg-red-100 border border-red-300 text-red-800 p-2 rounded-md text-xs">
               {error}
             </div>
           )}
 
           {/* Action Buttons */}
-          <div className="flex gap-3 justify-end mt-6">
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={isSubmitting}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                "Create Area"
-              )}
-            </button>
+          <div className="sticky bottom-0 bg-white pt-4 pb-2 border-t border-gray-200 -mx-4 px-4">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Area"
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>

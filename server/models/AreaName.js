@@ -21,6 +21,16 @@ const areaNameSchema = new mongoose.Schema({
       max: 180,
     },
   },
+  polygon: {
+    radius: {
+      type: Number,
+      default: 50, // in meters
+    },
+    coordinates: {
+      type: [[Number]], // Array of [lng, lat] pairs
+      default: null,
+    },
+  },
   createdAt: {
     type: Date,
     default: Date.now,

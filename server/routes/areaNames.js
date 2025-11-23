@@ -40,7 +40,7 @@ router.get("/:id", async (req, res) => {
 router.post("/", async (req, res) => {
   console.log("Post area name request hit:", req.body);
   try {
-    const { name, latitude, longitude } = req.body;
+    const { name, latitude, longitude, polygon } = req.body;
 
     // Validate required fields
     if (!name || latitude == null || longitude == null) {
@@ -61,6 +61,7 @@ router.post("/", async (req, res) => {
         latitude: parseFloat(latitude),
         longitude: parseFloat(longitude),
       },
+      polygon,
     };
 
     const areaName = new AreaName(areaNameData);

@@ -38,6 +38,18 @@ export const buildRoutesGeoJSON = (elements, polyline) => {
   };
 };
 
+export const buildAreaLabelsGeoJSON = (areas) => ({
+  type: "FeatureCollection",
+  features: areas.map((area) => ({
+    type: "Feature",
+    properties: { name: area.name },
+    geometry: {
+      type: "Point",
+      coordinates: [area.coordinates.longitude, area.coordinates.latitude],
+    },
+  })),
+});
+
 // Function to update route data
 export const updateRoutes = (updatedGeojson, map) => {
   if (map && map.getSource("routes")) {
@@ -391,15 +403,65 @@ export const drawCable = (
   }
 };
 
-export const safeRemoveLayer = (mapInstance, layerId) => {
-  if (mapInstance && mapInstance.getLayer && mapInstance.getLayer(layerId)) {
-    mapInstance.removeLayer(layerId);
+//utils.js
+export const isMapValid = (mapInstance) => {
+  try {
+    return !!(
+      mapInstance &&
+      typeof mapInstance.getLayer === "function" &&
+      typeof mapInstance.getSource === "function" &&
+      typeof mapInstance.loaded === "function" &&
+      mapInstance.loaded()
+    );
+  } catch (error) {
+    return false;
   }
 };
 
+export const safeRemoveLayer = (mapInstance, layerId) => {
+  if (!isMapValid(mapInstance)) return false;
+
+  try {
+    if (mapInstance.getLayer(layerId)) {
+      mapInstance.removeLayer(layerId);
+      return true;
+    }
+  } catch (error) {
+    console.debug(`Layer ${layerId} removal skipped:`, error.message);
+  }
+  return false;
+};
+
 export const safeRemoveSource = (mapInstance, sourceId) => {
-  if (mapInstance && mapInstance.getSource && mapInstance.getSource(sourceId)) {
-    mapInstance.removeSource(sourceId);
+  if (!isMapValid(mapInstance)) return false;
+
+  try {
+    if (mapInstance.getSource(sourceId)) {
+      mapInstance.removeSource(sourceId);
+      return true;
+    }
+  } catch (error) {
+    console.debug(`Source ${sourceId} removal skipped:`, error.message);
+  }
+  return false;
+};
+
+// Add this helper to check if source/layer exists
+export const layerExists = (mapInstance, layerId) => {
+  if (!isMapValid(mapInstance)) return false;
+  try {
+    return !!mapInstance.getLayer(layerId);
+  } catch {
+    return false;
+  }
+};
+
+export const sourceExists = (mapInstance, sourceId) => {
+  if (!isMapValid(mapInstance)) return false;
+  try {
+    return !!mapInstance.getSource(sourceId);
+  } catch {
+    return false;
   }
 };
 
