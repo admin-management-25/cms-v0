@@ -1,18 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Filter, X, MapPin } from "lucide-react";
 
 const AdvancedFilters = ({
   onFiltersChange,
-  services,
-  serviceTypes,
-  locations,
+  services = [],
+  serviceTypes = [],
+  areas = [], // New prop
 }) => {
   const [showFilters, setShowFilters] = useState(false);
+  const [areaSearch, setAreaSearch] = useState("");
   const [filters, setFilters] = useState({
     service: [],
     serviceType: [],
+    areas: [], // New filter
     distanceRange: [],
     searchTerm: "",
     sortBy: [],
@@ -23,9 +25,9 @@ const AdvancedFilters = ({
     let updated = Array.isArray(filters[key]) ? [...filters[key]] : [];
 
     if (updated.includes(value)) {
-      updated = updated.filter((v) => v !== value); // remove
+      updated = updated.filter((v) => v !== value);
     } else {
-      updated.push(value); // add
+      updated.push(value);
     }
 
     const newFilters = { ...filters, [key]: updated };
@@ -52,6 +54,7 @@ const AdvancedFilters = ({
     const reset = {
       service: [],
       serviceType: [],
+      areas: [],
       distanceRange: [],
       searchTerm: "",
       sortBy: [],
@@ -59,12 +62,22 @@ const AdvancedFilters = ({
     };
     setFilters(reset);
     onFiltersChange(reset);
+    setAreaSearch("");
   };
 
-  // 🔑 helpers to resolve names
   const getServiceName = (id) => services.find((s) => s._id === id)?.name || id;
   const getServiceTypeName = (id) =>
     serviceTypes.find((t) => t._id === id)?.name || id;
+  const getAreaName = (id) => areas.find((a) => a._id === id)?.name || id;
+
+  // Filter areas based on search
+  const filteredAreas = areas.filter((area) =>
+    area.name.toLowerCase().includes(areaSearch.toLowerCase())
+  );
+
+  const activeFilterCount = Object.values(filters)
+    .flat()
+    .filter(Boolean).length;
 
   return (
     <div>
@@ -75,23 +88,21 @@ const AdvancedFilters = ({
       >
         <Filter size={18} />
         <span>Filters</span>
+        {activeFilterCount > 0 && (
+          <span className="bg-blue-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+            {activeFilterCount}
+          </span>
+        )}
       </button>
 
       {/* Active filters chips */}
       <div className="space-y-4 mt-4">
-        {/* Section Header */}
-        {(filters.service.length > 0 ||
-          filters.serviceType.length > 0 ||
-          filters.distanceRange.length > 0 ||
-          filters.sortBy.length > 0 ||
-          filters.sortOrder.length > 0) && (
+        {activeFilterCount > 0 && (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1 bg-blue-500 text-white px-2 py-1 rounded-full text-xs font-medium shadow-sm">
                 <Filter size={12} />
-                <span className="font-bold">
-                  {Object.values(filters).flat().length}
-                </span>
+                <span className="font-bold">{activeFilterCount}</span>
               </span>
               <button
                 onClick={clearAll}
@@ -105,10 +116,10 @@ const AdvancedFilters = ({
         )}
 
         {filters.searchTerm && (
-          <>
+          <div className="space-y-2">
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-4 bg-black rounded-full"></div>
-              <span className="text-xs bg-white-500 font-semibold text-gray-700 uppercase tracking-wide">
+              <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                 Search
               </span>
             </div>
@@ -125,7 +136,7 @@ const AdvancedFilters = ({
                 <X size={10} className="text-gray-500" />
               </button>
             </span>
-          </>
+          </div>
         )}
 
         {/* Filter Sections */}
@@ -135,7 +146,7 @@ const AdvancedFilters = ({
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-4 bg-blue-500 rounded-full"></div>
-                <span className="text-xs bg-white-500 font-semibold text-gray-700 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                   Service
                 </span>
               </div>
@@ -157,13 +168,12 @@ const AdvancedFilters = ({
               </div>
             </div>
           )}
-
           {/* Service Type Section */}
           {filters.serviceType.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-4 bg-purple-500 rounded-full"></div>
-                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                   Service Type
                 </span>
               </div>
@@ -191,7 +201,7 @@ const AdvancedFilters = ({
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-4 bg-green-500 rounded-full"></div>
-                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                   Distance Range
                 </span>
               </div>
@@ -213,13 +223,12 @@ const AdvancedFilters = ({
               </div>
             </div>
           )}
-
           {/* Sort By Section */}
           {filters.sortBy.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
-                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                   Sort By
                 </span>
               </div>
@@ -241,13 +250,12 @@ const AdvancedFilters = ({
               </div>
             </div>
           )}
-
           {/* Sort Order Section */}
           {filters.sortOrder.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-4 bg-red-500 rounded-full"></div>
-                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                   Sort Order
                 </span>
               </div>
@@ -270,19 +278,6 @@ const AdvancedFilters = ({
             </div>
           )}
         </div>
-
-        {/* Empty State */}
-        {Object.values(filters).flat().length === 0 && (
-          <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
-            <Filter size={32} className="mx-auto text-gray-400 mb-3" />
-            <p className="text-sm text-gray-500 font-medium">
-              No active filters
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              Apply filters to see them here
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Sidebar */}
@@ -361,6 +356,55 @@ const AdvancedFilters = ({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Areas - NEW */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                Areas ({areas.length})
+              </label>
+
+              {/* Area Search */}
+              {areas.length > 5 && (
+                <div className="mb-2">
+                  <input
+                    type="text"
+                    className="w-full border px-2 py-1 rounded text-sm"
+                    placeholder="Search areas..."
+                    value={areaSearch}
+                    onChange={(e) => setAreaSearch(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="max-h-48 overflow-y-auto space-y-2">
+                {filteredAreas.length > 0 ? (
+                  filteredAreas.map((area) => {
+                    const isSelected = filters.areas.includes(area._id);
+                    return (
+                      <button
+                        key={area._id}
+                        type="button"
+                        className={`w-full px-3 py-2 rounded-lg text-sm border transition-colors flex items-center gap-2 ${
+                          isSelected
+                            ? "bg-teal-500 text-white border-teal-500"
+                            : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
+                        }`}
+                        onClick={() => toggleFilter("areas", area._id)}
+                      >
+                        <MapPin size={14} />
+                        <span className="flex-1 text-left truncate">
+                          {area.name}
+                        </span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-gray-500 text-center py-2">
+                    No areas found
+                  </p>
+                )}
               </div>
             </div>
 

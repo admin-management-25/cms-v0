@@ -1,14 +1,16 @@
 // components/AddLocationModal.js
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import axios from "../components/axios";
+import * as turf from "@turf/turf";
+import { MapPin, Building2 } from "lucide-react";
 
 export const uploadToCloudinary = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", "react_upload_preset"); // ← Replace with your preset
-  formData.append("cloud_name", "dgixdcqvh"); // ← Replace with your cloud name
+  formData.append("upload_preset", "react_upload_preset");
+  formData.append("cloud_name", "dgixdcqvh");
 
   const res = await fetch(
     "https://api.cloudinary.com/v1_1/dgixdcqvh/image/upload",
@@ -28,6 +30,8 @@ const AddLocationModal = ({
   onClose,
   coordinates,
   onLocationCreated,
+  allLocations = [],
+  hubs = [],
 }) => {
   const [services, setServices] = useState([]);
   const [serviceTypes, setServiceTypes] = useState([]);
@@ -43,6 +47,57 @@ const AddLocationModal = ({
   const [imagePreview, setImagePreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showNearby, setShowNearby] = useState(true);
+  const [startingPoint, setStartingPoint] = useState({
+    name: "Central Hub",
+    type: "default",
+    id: null,
+    coordinates: null,
+  });
+
+  // Calculate nearby locations and hubs
+  const nearbyData = useMemo(() => {
+    if (!coordinates || !isOpen) return { locations: [], hubs: [] };
+
+    const clickedPoint = turf.point([
+      coordinates.longitude,
+      coordinates.latitude,
+    ]);
+
+    // Find nearby locations within 500m
+    const nearbyLocations = allLocations
+      .map((location) => {
+        const locationPoint = turf.point([
+          location.coordinates.longitude,
+          location.coordinates.latitude,
+        ]);
+        const distance = turf.distance(clickedPoint, locationPoint, {
+          units: "meters",
+        });
+        return { ...location, distance };
+      })
+      .filter((loc) => loc.distance <= 500)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 5);
+
+    // Find nearby hubs within 1000m
+    const nearbyHubs = hubs
+      .map((hub) => {
+        const hubPoint = turf.point([
+          hub.coordinates.longitude,
+          hub.coordinates.latitude,
+        ]);
+        const distance = turf.distance(clickedPoint, hubPoint, {
+          units: "meters",
+        });
+        return { ...hub, distance };
+      })
+      .filter((hub) => hub.distance <= 1000)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 3);
+
+    return { locations: nearbyLocations, hubs: nearbyHubs };
+  }, [coordinates, allLocations, hubs, isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -53,6 +108,13 @@ const AddLocationModal = ({
       setImagePreview(null);
       setImagePreview2(null);
       setError("");
+      setShowNearby(true);
+      setStartingPoint({
+        name: "Central Hub",
+        type: "default",
+        id: null,
+        coordinates: null,
+      });
     }
   }, [isOpen]);
 
@@ -137,14 +199,12 @@ const AddLocationModal = ({
         ...(image2Url && { image2: image2Url }),
       };
 
-      console.log("Submitting location data:", locationData);
-
       const response = await axios.post("/api/locations", locationData, {
         headers: {
-          "Content-Type": "application/json", // ✅ Force JSON
+          "Content-Type": "application/json",
         },
       });
-      onLocationCreated(response.data);
+      onLocationCreated(response.data, startingPoint.coordinates);
       onClose();
     } catch (err) {
       setError(err.message || "Failed to create location");
@@ -176,7 +236,7 @@ const AddLocationModal = ({
           borderRadius: "12px",
           padding: "30px",
           width: "90%",
-          maxWidth: "500px",
+          maxWidth: "700px",
           maxHeight: "90vh",
           overflow: "auto",
           boxShadow: "0 20px 40px rgba(0, 0, 0, 0.2)",
@@ -221,6 +281,316 @@ const AddLocationModal = ({
           <br />
           Longitude: {coordinates?.longitude?.toFixed(6)}
         </div>
+
+        {/* Starts From Section */}
+        <div
+          style={{
+            background: "#fff3e0",
+            border: "2px solid #ffb74d",
+            borderRadius: "8px",
+            padding: "16px",
+            marginBottom: "20px",
+          }}
+        >
+          <h3
+            style={{
+              margin: 0,
+              fontSize: "16px",
+              color: "#e65100",
+              marginBottom: "12px",
+              fontWeight: "600",
+            }}
+          >
+            🚀 Starts From
+          </h3>
+          <div
+            style={{
+              background: "white",
+              padding: "12px",
+              borderRadius: "6px",
+              border: "2px solid #ffb74d",
+            }}
+          >
+            <div
+              style={{ fontWeight: "600", color: "#e65100", fontSize: "14px" }}
+            >
+              {startingPoint.name}
+            </div>
+            {startingPoint.type !== "default" && (
+              <div
+                style={{ fontSize: "11px", color: "#999", marginTop: "4px" }}
+              >
+                {startingPoint.type === "hub" ? "🏢 Hub" : "📍 Location"}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Nearby Locations & Hubs Section */}
+        {(nearbyData.locations.length > 0 || nearbyData.hubs.length > 0) && (
+          <div
+            style={{
+              background: "#e8f5e9",
+              border: "2px solid #81c784",
+              borderRadius: "8px",
+              padding: "16px",
+              marginBottom: "20px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px",
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "16px",
+                  color: "#2e7d32",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <MapPin size={18} />
+                Nearby Points
+              </h3>
+              <button
+                onClick={() => setShowNearby(!showNearby)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  color: "#2e7d32",
+                  fontWeight: "600",
+                }}
+              >
+                {showNearby ? "Hide" : "Show"}
+              </button>
+            </div>
+
+            {showNearby && (
+              <>
+                {/* Nearby Locations */}
+                {nearbyData.locations.length > 0 && (
+                  <div style={{ marginBottom: "16px" }}>
+                    <h4
+                      style={{
+                        fontSize: "13px",
+                        color: "#1b5e20",
+                        marginBottom: "8px",
+                        fontWeight: "600",
+                      }}
+                    >
+                      📍 Nearby Locations ({nearbyData.locations.length})
+                    </h4>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                        maxHeight: "200px",
+                        overflowY: "auto",
+                        paddingRight: "8px",
+                      }}
+                    >
+                      {nearbyData.locations.map((loc) => (
+                        <div
+                          key={loc._id}
+                          onClick={() =>
+                            setStartingPoint({
+                              name: `${loc.serviceName?.name || "Unknown"} - ${
+                                loc.serviceType?.name || ""
+                              }`,
+                              type: "location",
+                              id: loc._id,
+                              coordinates: loc.coordinates,
+                            })
+                          }
+                          style={{
+                            background:
+                              startingPoint.id === loc._id
+                                ? "#c8e6c9"
+                                : "white",
+                            padding: "10px",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            border:
+                              startingPoint.id === loc._id
+                                ? "2px solid #4caf50"
+                                : "1px solid #c8e6c9",
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (startingPoint.id !== loc._id) {
+                              e.currentTarget.style.background = "#f1f8f1";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (startingPoint.id !== loc._id) {
+                              e.currentTarget.style.background = "white";
+                            }
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "start",
+                            }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div
+                                style={{ fontWeight: "600", color: "#2e7d32" }}
+                              >
+                                {loc.serviceName?.name || "Unknown Service"}
+                              </div>
+                              <div style={{ color: "#666", fontSize: "11px" }}>
+                                {loc.serviceType?.icon} {loc.serviceType?.name}
+                              </div>
+                              {loc.notes && (
+                                <div
+                                  style={{
+                                    color: "#999",
+                                    fontSize: "11px",
+                                    marginTop: "4px",
+                                  }}
+                                >
+                                  {loc.notes.substring(0, 50)}
+                                  {loc.notes.length > 50 ? "..." : ""}
+                                </div>
+                              )}
+                            </div>
+                            <div
+                              style={{
+                                background: "#4caf50",
+                                color: "white",
+                                padding: "4px 8px",
+                                borderRadius: "12px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {loc.distance.toFixed(0)}m away
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Nearby Hubs */}
+                {nearbyData.hubs.length > 0 && (
+                  <div>
+                    <h4
+                      style={{
+                        fontSize: "13px",
+                        color: "#1b5e20",
+                        marginBottom: "8px",
+                        fontWeight: "600",
+                      }}
+                    >
+                      🏢 Nearby Hubs ({nearbyData.hubs.length})
+                    </h4>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                        maxHeight: "200px",
+                        overflowY: "auto",
+                        paddingRight: "8px",
+                      }}
+                    >
+                      {nearbyData.hubs.map((hub) => (
+                        <div
+                          key={hub._id}
+                          onClick={() =>
+                            setStartingPoint({
+                              name: hub.name,
+                              type: "hub",
+                              id: hub._id,
+                              coordinates: hub.coordinates,
+                            })
+                          }
+                          style={{
+                            background:
+                              startingPoint.id === hub._id
+                                ? "#ffe0b2"
+                                : "white",
+                            padding: "10px",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            border:
+                              startingPoint.id === hub._id
+                                ? "2px solid #ff9800"
+                                : "1px solid #c8e6c9",
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (startingPoint.id !== hub._id) {
+                              e.currentTarget.style.background = "#fff8f0";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (startingPoint.id !== hub._id) {
+                              e.currentTarget.style.background = "white";
+                            }
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <div
+                              style={{ fontWeight: "600", color: "#2e7d32" }}
+                            >
+                              {hub.name}
+                            </div>
+                            <div
+                              style={{
+                                background: "#ff9800",
+                                color: "white",
+                                padding: "4px 8px",
+                                borderRadius: "12px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                              }}
+                            >
+                              {hub.distance.toFixed(0)}m away
+                            </div>
+                          </div>
+                          {hub.notes && (
+                            <div
+                              style={{
+                                color: "#999",
+                                fontSize: "11px",
+                                marginTop: "4px",
+                              }}
+                            >
+                              {hub.notes}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {error && (
           <div

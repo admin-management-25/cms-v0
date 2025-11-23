@@ -18,6 +18,7 @@ import {
 } from "../components/Map/Marker";
 import {
   addJunctionBox,
+  buildAreaLabelsGeoJSON,
   buildRoutesGeoJSON,
   deleteJunctionBox,
   deleteSubHub,
@@ -33,22 +34,19 @@ import { useActionPopup } from "../components/hooks/useActionPopup";
 import ActionPopup from "../components/ActionPopup";
 import { drawRadiusCircles } from "../components/Map/utils2";
 import AddAreaModal from "../components/AddAreaModal";
-import { Axios } from "axios";
+import { useLocationFilters } from "../components/hooks/useLocationFilters";
 
 const NetworkMap = () => {
   const [allLocations, setAllLocations] = useState([]);
-  const [filteredLocations, setFilteredLocations] = useState([]);
   const [services, setServices] = useState([]);
   const [serviceTypes, setServiceTypes] = useState([]);
   const [hubs, setHubs] = useState([]);
+  const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
-  // const [showActionPopup, setShowActionPopup] = useState(false);
-  // const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const [showAddHubModal, setShowAddHubModal] = useState(false);
   const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
-  // const [clickedCoordinates, setClickedCoordinates] = useState(null);
   const [success, setSuccess] = useState("");
   const [hoveredLocation, setHoveredLocation] = useState(null);
   const [mapServiceTypeFilter, setMapServiceTypeFilter] = useState("");
@@ -70,6 +68,181 @@ const NetworkMap = () => {
     openPopup,
     closePopup,
   } = useActionPopup(map);
+  // In your parent component:
+  const [filterState, setFilterState] = useState({
+    service: [],
+    serviceType: [],
+    areas: [],
+    distanceRange: [],
+    searchTerm: "",
+    sortBy: [],
+    sortOrder: [],
+  });
+
+  // Use the custom hook
+  const filteredLocations = useLocationFilters(
+    allLocations,
+    filterState,
+    areas
+  );
+
+  useEffect(() => {
+    if (!map || !olaMaps || !isMapLoaded.current) return;
+    if (!areas || areas.length === 0) return;
+
+    const LABEL_SOURCE = "areas-labels-source";
+    const LABEL_LAYER = "areas-labels-layer";
+
+    // --- Cleanup old source/layer ---
+    if (map.getLayer(LABEL_LAYER)) map.removeLayer(LABEL_LAYER);
+    if (map.getSource(LABEL_SOURCE)) map.removeSource(LABEL_SOURCE);
+
+    // --- Create new combined GeoJSON ---
+    const geojson = buildAreaLabelsGeoJSON(areas);
+
+    // --- Add source ---
+    map.addSource(LABEL_SOURCE, {
+      type: "geojson",
+      data: geojson,
+    });
+
+    // --- Add layer ---
+    map.addLayer({
+      id: LABEL_LAYER,
+      type: "symbol",
+      source: LABEL_SOURCE,
+      minzoom: 14, // ← show label only after zoom 14
+      layout: {
+        "text-field": ["get", "name"],
+        "text-font": ["Gentona_Book"],
+        "text-size": 16,
+        "text-anchor": "center",
+        "text-justify": "center",
+        "text-allow-overlap": false,
+      },
+      paint: {
+        "text-color": "#065f46",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 2,
+        "text-halo-blur": 0.5,
+      },
+    });
+
+    console.log("Area labels added:", areas.length);
+
+    return () => {
+      // Cleanup on unmount or before next render
+      if (map.getLayer(LABEL_LAYER)) map.removeLayer(LABEL_LAYER);
+      if (map.getSource(LABEL_SOURCE)) map.removeSource(LABEL_SOURCE);
+    };
+  }, [map, olaMaps, isMapLoaded.current, areas]);
+
+  // Add a state to track when to update highlights
+  const [highlightedAreaIds, setHighlightedAreaIds] = useState([]);
+
+  // Update this when filter changes
+  useEffect(() => {
+    setHighlightedAreaIds(filterState.areas || []);
+  }, [filterState.areas]);
+
+  // Separate useEffect for rendering with immediate effect
+  // Update the state-based rendering useEffect with better cleanup logic:
+
+  useEffect(() => {
+    if (!map || !olaMaps || !isMapLoaded.current) return;
+
+    const HIGHLIGHT_SOURCE = "highlighted-areas";
+    const HIGHLIGHT_LAYER = "highlighted-areas-layer";
+    const HIGHLIGHT_OUTLINE = "highlighted-areas-outline";
+
+    // Optimized removal function
+    const removeHighlights = () => {
+      try {
+        // Remove in correct order: layers first (reverse order), then source
+        if (map.getLayer(HIGHLIGHT_OUTLINE)) map.removeLayer(HIGHLIGHT_OUTLINE);
+        if (map.getLayer(HIGHLIGHT_LAYER)) map.removeLayer(HIGHLIGHT_LAYER);
+        if (map.getSource(HIGHLIGHT_SOURCE)) map.removeSource(HIGHLIGHT_SOURCE);
+      } catch (error) {
+        console.debug("Cleanup error (ignored):", error);
+      }
+    };
+
+    // Early return if no areas selected
+    if (!highlightedAreaIds?.length) {
+      removeHighlights();
+      return;
+    }
+
+    // Filter areas with valid polygons
+    const selectedAreas = areas.filter(
+      (area) =>
+        highlightedAreaIds.includes(area._id) &&
+        area.polygon?.coordinates?.length > 0
+    );
+
+    // Early return if no valid polygons
+    if (!selectedAreas.length) {
+      removeHighlights();
+      return;
+    }
+
+    try {
+      // Prepare GeoJSON data
+      const geojsonData = {
+        type: "FeatureCollection",
+        features: selectedAreas.map((area) => ({
+          type: "Feature",
+          properties: { name: area.name, areaId: area._id },
+          geometry: {
+            type: "Polygon",
+            coordinates: [area.polygon.coordinates],
+          },
+        })),
+      };
+
+      const existingSource = map.getSource(HIGHLIGHT_SOURCE);
+
+      if (existingSource) {
+        // Update existing source (most efficient)
+        existingSource.setData(geojsonData);
+      } else {
+        // Clean up any partial state
+        removeHighlights();
+
+        // Create fresh layers
+        map.addSource(HIGHLIGHT_SOURCE, {
+          type: "geojson",
+          data: geojsonData,
+        });
+
+        map.addLayer({
+          id: HIGHLIGHT_LAYER,
+          type: "fill",
+          source: HIGHLIGHT_SOURCE,
+          paint: {
+            "fill-color": "#10b981",
+            "fill-opacity": 0.2,
+          },
+        });
+
+        map.addLayer({
+          id: HIGHLIGHT_OUTLINE,
+          type: "line",
+          source: HIGHLIGHT_SOURCE,
+          paint: {
+            "line-color": "#07c98bff",
+            "line-width": 2,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Error highlighting areas:", error);
+      removeHighlights(); // Cleanup on error
+    }
+
+    // Cleanup on unmount or before next effect
+    return removeHighlights;
+  }, [highlightedAreaIds, areas, map, olaMaps]);
 
   const locationsForMap = useMemo(() => {
     if (!mapServiceTypeFilter) return filteredLocations;
@@ -337,10 +510,6 @@ const NetworkMap = () => {
   }, [map, olaMaps, safeRemoveLayer, safeRemoveSource]);
 
   useEffect(() => {
-    setFilteredLocations(allLocations);
-  }, [allLocations]);
-
-  useEffect(() => {
     if (
       map &&
       olaMaps &&
@@ -357,12 +526,13 @@ const NetworkMap = () => {
 
   const fetchData = async () => {
     try {
-      const [locationsRes, servicesRes, serviceTypesRes, hubsRes] =
+      const [locationsRes, servicesRes, serviceTypesRes, hubsRes, areasRes] =
         await Promise.all([
           axios.get("/api/locations"),
           axios.get("/api/services"),
           axios.get("/api/service-types"),
           axios.get("/api/hubs"),
+          axios.get("/api/area-names"),
         ]);
 
       const fixedLocations = locationsRes.data.map((loc) => {
@@ -379,6 +549,7 @@ const NetworkMap = () => {
       setServices(servicesRes.data);
       setServiceTypes(serviceTypesRes.data);
       setHubs(hubsRes.data);
+      setAreas(areasRes.data);
 
       setTimeout(() => {
         if (map && olaMaps && isMapLoaded.current) {
@@ -393,99 +564,23 @@ const NetworkMap = () => {
     }
   };
 
-  const handleFiltersChange = (filters) => {
+  useEffect(() => {
+    if (!map || !user?.geojson) return;
+
     try {
-      let filtered = [...allLocations];
+      const updatedGeoJSON = structuredClone(user.geojson);
 
-      if (filters.searchTerm) {
-        const searchTerm = filters.searchTerm.toLowerCase();
-        filtered = filtered.filter(
-          (location) =>
-            location.notes?.toLowerCase().includes(searchTerm) ||
-            location.serviceName?.name?.toLowerCase().includes(searchTerm) ||
-            location.serviceType?.name?.toLowerCase().includes(searchTerm) ||
-            location.coordinates.latitude.toString().includes(searchTerm) ||
-            location.coordinates.longitude.toString().includes(searchTerm)
-        );
-      }
-
-      if (filters.service.length > 0) {
-        filtered = filtered.filter((location) =>
-          filters.service.includes(location.serviceName?._id)
-        );
-      }
-
-      if (filters.serviceType.length > 0) {
-        filtered = filtered.filter((location) =>
-          filters.serviceType.includes(location.serviceType?._id)
-        );
-      }
-
-      if (filters.distanceRange.length > 0) {
-        filtered = filtered.filter((location) => {
-          const distance = location.distanceFromCentralHub;
-          return filters.distanceRange.some((range) => {
-            if (range.includes("+")) {
-              const min = Number.parseInt(range.replace("+", ""));
-              return distance >= min;
-            } else {
-              const [min, max] = range.split("-").map(Number);
-              return distance >= min && distance < max;
-            }
-          });
-        });
-      }
-
-      if (filters.sortBy.length > 0) {
-        filters.sortBy.forEach((sortKey) => {
-          filtered.sort((a, b) => {
-            let aValue, bValue;
-            switch (sortKey) {
-              case "name":
-                aValue = a.serviceName?.name || "";
-                bValue = b.serviceName?.name || "";
-                break;
-              case "type":
-                aValue = a.serviceType?.name || "";
-                bValue = b.serviceType?.name || "";
-                break;
-              case "created":
-                aValue = new Date(a.createdAt);
-                bValue = new Date(b.createdAt);
-                break;
-              case "distance":
-              default:
-                aValue = a.distanceFromCentralHub;
-                bValue = b.distanceFromCentralHub;
-                break;
-            }
-            if (filters.sortOrder.includes("desc")) {
-              return aValue < bValue ? 1 : -1;
-            }
-            return aValue > bValue ? 1 : -1;
-          });
-        });
-      }
-      const geojson = user?.geojson;
-      const updatedGeoJSON = structuredClone(geojson);
-      const features = JSON.parse(JSON.stringify(user?.geojson?.features));
-      const filtered2 = features.filter((f) => f);
-
-      updatedGeoJSON.features = filtered2.filter((feature) => {
+      updatedGeoJSON.features = updatedGeoJSON.features.filter((feature) => {
         const latitude = feature.coordinates?.latitude;
         const longitude = feature.coordinates?.longitude;
-        return filtered.some(
+        return filteredLocations.some(
           (conn) =>
             conn.coordinates.latitude === latitude &&
             conn.coordinates.longitude === longitude
         );
       });
 
-      safeRemoveSource();
-      safeRemoveLayer();
-      map.getSource("routes").setData(updatedGeoJSON); // redraw
-
-      // now updatedGeoJSON only contains the filtered connections
+      // Update map source
       if (map.getSource("routes")) {
         map.getSource("routes").setData(updatedGeoJSON);
       } else {
@@ -504,21 +599,27 @@ const NetworkMap = () => {
           },
         });
       }
-      setFilteredLocations(filtered);
     } catch (error) {
-      console.log(
-        ("Error while Handling the Filtering the Locations : ", error)
-      );
+      console.error("Error updating map:", error);
     }
-  };
+  }, [filteredLocations, map, user?.geojson]);
 
-  const handleLocationCreated = async (newLocation) => {
+  const handleLocationCreated = async (newLocation, startingCoordinates) => {
     try {
       if (newLocation.image && newLocation.image.startsWith("/uploads")) {
         newLocation.image = `${API_BASE_URL}${newLocation.image}`;
       }
+      let startingPoint;
+      if (startingCoordinates) {
+        startingPoint = {
+          lat: startingCoordinates.latitude,
+          lng: startingCoordinates.longitude,
+        };
+      } else {
+        startingPoint = CENTRAL_HUB;
+      }
       const response = await fetch(
-        `https://api.olamaps.io/routing/v1/distanceMatrix?origins=${CENTRAL_HUB.lat}%2C${CENTRAL_HUB.lng}&destinations=${newLocation?.coordinates.latitude}%2C${newLocation?.coordinates.longitude}&api_key=dxEuToWnHB5W4e4lcqiFwu2RwKA64Ixi0BFR73kQ`,
+        `https://api.olamaps.io/routing/v1/distanceMatrix?origins=${startingPoint.lat}%2C${startingPoint.lng}&destinations=${newLocation?.coordinates.latitude}%2C${newLocation?.coordinates.longitude}&api_key=dxEuToWnHB5W4e4lcqiFwu2RwKA64Ixi0BFR73kQ`,
         {
           method: "GET",
           headers: { "X-Request-Id": "XXX" },
@@ -728,10 +829,11 @@ const NetworkMap = () => {
         {/* Left Filters */}
         <div className="absolute top-4 left-0 w-[250px] px-4">
           <AdvancedFilters
-            onFiltersChange={handleFiltersChange}
+            onFiltersChange={setFilterState}
             services={services}
             serviceTypes={serviceTypes}
             locations={filteredLocations}
+            areas={areas}
           />
         </div>
 
@@ -776,6 +878,7 @@ const NetworkMap = () => {
           console.log("New Area ;; ", newArea);
           // setAreas((prev) => [...prev, newArea]);
         }}
+        map={map}
       />
 
       <JunctionModal
@@ -797,6 +900,8 @@ const NetworkMap = () => {
         onClose={handleCloseModal}
         coordinates={clickedCoordinates}
         onLocationCreated={handleLocationCreated}
+        allLocations={allLocations}
+        hubs={hubs}
       />
     </div>
   );
