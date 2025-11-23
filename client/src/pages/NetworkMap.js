@@ -643,7 +643,11 @@ const NetworkMap = () => {
         coordinates: newLocation.coordinates,
       };
 
-      const updatedGeoJSON = { ...user.geojson };
+      const updatedGeoJSON = user.geojson ?? {
+        type: "FeatureCollection",
+        features: [],
+      };
+
       updatedGeoJSON.features.push(addRoute);
 
       const geojsonResponse = await axios.put(`/api/admin/${user.id}/geojson`, {
