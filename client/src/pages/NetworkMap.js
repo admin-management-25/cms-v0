@@ -813,8 +813,6 @@ const NetworkMap = () => {
     setShowAddModal(false);
   };
 
-  console.log("locs: ", allLocations);
-
   return (
     <div>
       <div className="relative">
