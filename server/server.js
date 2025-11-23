@@ -16,6 +16,7 @@ app.use(
       "http://localhost:3000",
       "https://cable-net-client.vercel.app",
       "https://cable-net-fe.vercel.app",
+      "https://cms-v0-hgxa.vercel.app",
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
