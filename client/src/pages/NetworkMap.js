@@ -19,14 +19,12 @@ import {
 import {
   addJunctionBox,
   buildAreaLabelsGeoJSON,
-  buildRoutesGeoJSON,
   deleteJunctionBox,
   deleteSubHub,
   drawCable,
   safeRemoveLayer,
   safeRemoveSource,
   showToast,
-  updateRoutes,
 } from "../components/Map/utils";
 import JunctionModal from "../components/JunctionModal";
 import AddHubModal from "../components/AddHubModal";
@@ -35,6 +33,7 @@ import ActionPopup from "../components/ActionPopup";
 import { drawRadiusCircles } from "../components/Map/utils2";
 import AddAreaModal from "../components/AddAreaModal";
 import { useLocationFilters } from "../components/hooks/useLocationFilters";
+import { useRouteManagement } from "../components/hooks/useRouteManagement";
 
 const NetworkMap = () => {
   const [allLocations, setAllLocations] = useState([]);
@@ -86,6 +85,14 @@ const NetworkMap = () => {
     areas
   );
 
+  // Initialize route management
+  const {
+    handleRoutes,
+    updateRoutesSource,
+    addRoutesLayer,
+    removeRoutesLayer,
+  } = useRouteManagement(map, olaMaps, isMapLoaded, showRoutes, user, setUser);
+
   useEffect(() => {
     if (!map || !olaMaps || !isMapLoaded.current) return;
     if (!areas || areas.length === 0) return;
@@ -128,14 +135,18 @@ const NetworkMap = () => {
       },
     });
 
-    console.log("Area labels added:", areas.length);
-
     return () => {
       // Cleanup on unmount or before next render
       if (map.getLayer(LABEL_LAYER)) map.removeLayer(LABEL_LAYER);
       if (map.getSource(LABEL_SOURCE)) map.removeSource(LABEL_SOURCE);
     };
   }, [map, olaMaps, isMapLoaded.current, areas]);
+
+  const removeRouteLayer = useCallback(() => {
+    if (!map || !olaMaps || !isMapLoaded.current || !user.geojson) return;
+    if (map.getLayer("routes-layer")) map.removeLayer("routes-laye");
+    if (map.getSource("routes")) map.removeSource("routes");
+  }, [map, isMapLoaded.current, user]);
 
   // Add a state to track when to update highlights
   const [highlightedAreaIds, setHighlightedAreaIds] = useState([]);
@@ -305,87 +316,8 @@ const NetworkMap = () => {
             .addTo(map);
         }
 
-        if (user.geojson && user.geojson !== "null") {
-          // Add or update source
-          const geojson = user.geojson;
-          if (!map.getSource("routes")) {
-            map.addSource("routes", { type: "geojson", data: geojson });
-          } else {
-            map.getSource("routes").setData(geojson);
-          }
-        } else {
-          if (connections.length > 0) {
-            const locationString = connections
-              .map(
-                (conn) =>
-                  `${conn.coordinates.latitude}%2C${conn.coordinates.longitude}`
-              )
-              .join("%7C");
-
-            console.log("The Geojson Routing Api is calling ..");
-
-            const response = await fetch(
-              `https://api.olamaps.io/routing/v1/distanceMatrix?origins=${CENTRAL_HUB.lat}%2C${CENTRAL_HUB.lng}&destinations=${locationString}&api_key=dxEuToWnHB5W4e4lcqiFwu2RwKA64Ixi0BFR73kQ`,
-              {
-                method: "GET",
-                headers: { "X-Request-Id": "XXX" },
-              }
-            );
-
-            const data = await response.json();
-            const elements = data.rows[0].elements;
-            const convertedElementsVal = elements.map((el, index) => ({
-              distance: el.distance,
-              duration: `${Math.floor(el.duration / 3600)} hrs ${Math.floor(
-                (el.duration % 3600) / 60
-              )} min`,
-              polyline: el.polyline,
-              service: connections[index]?.serviceName,
-              serviceType: connections[index]?.serviceType,
-              createdAt: connections[index]?.createdAt,
-              distanceFromCentralHub:
-                connections[index]?.distanceFromCentralHub,
-              image: connections[index]?.image,
-              notes: connections[index]?.notes,
-              location: connections[index]?.coordinates || "N/A",
-            }));
-
-            const geojson = buildRoutesGeoJSON(convertedElementsVal, polyline);
-            const geojsonResponse = await axios.put(
-              `/api/admin/${user.id}/geojson`,
-              {
-                geojson,
-              }
-            );
-            if (geojsonResponse.status === 200) {
-              const updateUser = geojsonResponse.data.user;
-              setUser(updateUser);
-              localStorage.setItem("auth", JSON.stringify(updateUser));
-              // Add or update source
-              if (!map.getSource("routes")) {
-                map.addSource("routes", { type: "geojson", data: geojson });
-              } else {
-                map.getSource("routes").setData(geojson);
-              }
-            }
-          }
-        }
-
-        // 👇 Only add layer if routes should be visible
-        if (showRoutes) {
-          if (!map.getLayer("routes-layer")) {
-            map.addLayer({
-              id: "routes-layer",
-              type: "line",
-              source: "routes",
-              layout: { "line-join": "round", "line-cap": "round" },
-              paint: {
-                "line-width": 4,
-                "line-color": ["get", "color"],
-              },
-            });
-          }
-        }
+        // Handle routes separately
+        await handleRoutes(connections);
 
         const maxDistance =
           connections.length > 0
@@ -407,43 +339,24 @@ const NetworkMap = () => {
         console.log("Error in renderConnections:", error);
       }
     },
-    [
-      map,
-      olaMaps,
-      createLocationMarkerElement,
-      createSubHubMarker,
-      drawRadiusCircles,
-      buildRoutesGeoJSON,
-      safeRemoveLayer,
-      safeRemoveSource,
-      showRoutes,
-    ]
+    [map, olaMaps, handleRoutes, createLocationMarkerElement, drawRadiusCircles]
   );
 
-  // 👇 Toggle function to show/hide routes
+  // Toggle function - FIXED VERSION
   const toggleRoutes = useCallback(() => {
     if (!map || !isMapLoaded.current) return;
 
-    if (showRoutes) {
-      // Hide routes
-      safeRemoveLayer(map, "routes-layer");
-    } else {
-      // Show routes (re-add layer if source exists)
-      if (map.getSource("routes") && !map.getLayer("routes-layer")) {
-        map.addLayer({
-          id: "routes-layer",
-          type: "line",
-          source: "routes",
-          layout: { "line-join": "round", "line-cap": "round" },
-          paint: {
-            "line-width": 4,
-            "line-color": ["get", "color"],
-          },
-        });
-      }
+    if (map.getLayer("routes-layer")) {
+      const newVisibility = showRoutes ? "none" : "visible";
+      map.setLayoutProperty("routes-layer", "visibility", newVisibility);
+      setShowRoutes(!showRoutes);
+      console.log("Routes toggled to:", newVisibility);
+    } else if (!showRoutes && map.getSource("routes")) {
+      // If layer doesn't exist but source does, add it
+      addRoutesLayer();
+      setShowRoutes(true);
     }
-    setShowRoutes(!showRoutes);
-  }, [map, showRoutes, safeRemoveLayer]);
+  }, [map, showRoutes, isMapLoaded, addRoutesLayer]);
 
   useEffect(() => {
     if (!map || !olaMaps) return;
@@ -564,51 +477,13 @@ const NetworkMap = () => {
     }
   };
 
-  useEffect(() => {
-    if (!map || !user?.geojson) return;
-
-    try {
-      const updatedGeoJSON = structuredClone(user.geojson);
-
-      updatedGeoJSON.features = updatedGeoJSON.features.filter((feature) => {
-        const latitude = feature.coordinates?.latitude;
-        const longitude = feature.coordinates?.longitude;
-        return filteredLocations.some(
-          (conn) =>
-            conn.coordinates.latitude === latitude &&
-            conn.coordinates.longitude === longitude
-        );
-      });
-
-      // Update map source
-      if (map.getSource("routes")) {
-        map.getSource("routes").setData(updatedGeoJSON);
-      } else {
-        map.addSource("routes", {
-          type: "geojson",
-          data: updatedGeoJSON,
-        });
-
-        map.addLayer({
-          id: "routes",
-          type: "line",
-          source: "routes",
-          paint: {
-            "line-color": "#007bff",
-            "line-width": 3,
-          },
-        });
-      }
-    } catch (error) {
-      console.error("Error updating map:", error);
-    }
-  }, [filteredLocations, map, user?.geojson]);
-
+  // 5. Handle new location with separate route logic
   const handleLocationCreated = async (newLocation, startingCoordinates) => {
     try {
       if (newLocation.image && newLocation.image.startsWith("/uploads")) {
         newLocation.image = `${API_BASE_URL}${newLocation.image}`;
       }
+
       let startingPoint;
       if (startingCoordinates) {
         startingPoint = {
@@ -618,6 +493,8 @@ const NetworkMap = () => {
       } else {
         startingPoint = CENTRAL_HUB;
       }
+
+      // Fetch route for new location
       const response = await fetch(
         `https://api.olamaps.io/routing/v1/distanceMatrix?origins=${startingPoint.lat}%2C${startingPoint.lng}&destinations=${newLocation?.coordinates.latitude}%2C${newLocation?.coordinates.longitude}&api_key=dxEuToWnHB5W4e4lcqiFwu2RwKA64Ixi0BFR73kQ`,
         {
@@ -625,11 +502,13 @@ const NetworkMap = () => {
           headers: { "X-Request-Id": "XXX" },
         }
       );
+
       const data = await response.json();
       const elements = data.rows[0].elements;
       const decoded = polyline
         .decode(elements[0].polyline)
         .map(([lat, lng]) => [lng, lat]);
+
       const addRoute = {
         type: "Feature",
         geometry: {
@@ -650,22 +529,24 @@ const NetworkMap = () => {
 
       updatedGeoJSON.features.push(addRoute);
 
+      // Save updated GeoJSON
       const geojsonResponse = await axios.put(`/api/admin/${user.id}/geojson`, {
         geojson: updatedGeoJSON,
       });
+
       if (geojsonResponse.status === 200) {
-        alert("Connection created successfully ✅:");
+        alert("Connection created successfully ✅");
         const updateUser = geojsonResponse.data.user;
         setUser(updateUser);
         localStorage.setItem("auth", JSON.stringify(updateUser));
-        console.log("Locaiton Added REs : ", updateUser.geojson);
 
+        // Add marker
         const markerElement = createLocationMarkerElement(
           newLocation,
           drawCable,
           setHoveredLocation,
           { map, olaMaps, isMapLoaded },
-          { user, setUser },
+          { user: updateUser, setUser },
           turf,
           addJunctionBox
         );
@@ -678,18 +559,15 @@ const NetworkMap = () => {
           ])
           .addTo(map);
 
+        // Update routes separately
+        updateRoutesSource(updateUser.geojson);
+
         setAllLocations((prev) => [...prev, newLocation]);
         setSuccess("Location added successfully!");
-        setTimeout(() => {
-          if (map && olaMaps && isMapLoaded.current) {
-            updateRoutes(updateUser.geojson, map);
-            // renderConnections([...allLocations, newLocation]);
-          }
-        }, 100);
         setTimeout(() => setSuccess(""), 3000);
       }
     } catch (error) {
-      console.log("Error While Creating a Location : ", error);
+      console.log("Error While Creating a Location:", error);
     }
   };
 
@@ -880,7 +758,7 @@ const NetworkMap = () => {
         onAreaCreated={(newArea) => {
           // Handle the created area
           console.log("New Area ;; ", newArea);
-          // setAreas((prev) => [...prev, newArea]);
+          setAreas((prev) => [...prev, newArea]);
         }}
         map={map}
       />
