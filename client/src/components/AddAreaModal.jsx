@@ -8,7 +8,7 @@ const AddAreaModal = ({ isOpen, onClose, coordinates, onAreaCreated, map }) => {
   const [areaName, setAreaName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPolygon, setShowPolygon] = useState(false);
-  const [polygonRadius, setPolygonRadius] = useState(500);
+  const [polygonRadius, setPolygonRadius] = useState(200);
   const { loading, error, addresses, reverseGeocode } = useReverseGeocode();
 
   // ✅ Safe removal functions
