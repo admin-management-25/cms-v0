@@ -287,7 +287,7 @@ export const drawCable = (
       .getElementById("increase-interval")
       .addEventListener("click", () => {
         if (currentInterval < 100) {
-          currentInterval += 2;
+          currentInterval += 1;
           document.getElementById("interval-value").textContent =
             currentInterval;
           createMarkers(currentInterval);
@@ -297,8 +297,8 @@ export const drawCable = (
     document
       .getElementById("decrease-interval")
       .addEventListener("click", () => {
-        if (currentInterval > 5) {
-          currentInterval -= 5;
+        if (currentInterval > 1) {
+          currentInterval -= 1;
           document.getElementById("interval-value").textContent =
             currentInterval;
           createMarkers(currentInterval);
