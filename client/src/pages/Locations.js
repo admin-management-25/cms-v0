@@ -1,4 +1,3 @@
-// components/Locations.js
 "use client";
 
 import { useState, useEffect } from "react";
@@ -187,6 +186,16 @@ const Locations = () => {
         const { data } = await axios.delete(`/api/locations/${id}/${user.id}`);
         setUser(data.updatedUser);
         localStorage.setItem("auth", JSON.stringify(data.updatedUser));
+
+        // Broadcast the deletion to other tabs/devices
+        const channel = new BroadcastChannel("geojson-updates");
+        channel.postMessage({
+          type: "GEOJSON_UPDATE",
+          geojson: data.updatedUser.geojson,
+          timestamp: Date.now(),
+        });
+        channel.close();
+
         setSuccess("Location deleted successfully");
         fetchData();
       } catch (error) {
@@ -195,7 +204,6 @@ const Locations = () => {
       }
     }
   };
-
   const resetForm = () => {
     setFormData({
       serviceName: "",
