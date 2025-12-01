@@ -434,6 +434,33 @@ const NetworkMap = () => {
     }
   }, [locationsForMap, hubs, map, olaMaps, renderConnections]);
 
+  useEffect(() => {
+    if (!map || !olaMaps || !isMapLoaded.current) return;
+    if (!user?.geojson) return;
+
+    try {
+      const filteredGeoJSON = structuredClone(user.geojson);
+
+      filteredGeoJSON.features = filteredGeoJSON.features.filter((feature) => {
+        const latitude = feature.coordinates?.latitude;
+        const longitude = feature.coordinates?.longitude;
+
+        return locationsForMap.some(
+          (conn) =>
+            conn.coordinates.latitude === latitude &&
+            conn.coordinates.longitude === longitude
+        );
+      });
+      renderConnections(filteredLocations);
+
+      if (map.getSource("routes")) {
+        map.getSource("routes").setData(filteredGeoJSON);
+      }
+    } catch (error) {
+      console.error("Error updating filtered routes:", error);
+    }
+  }, [locationsForMap, map, olaMaps, isMapLoaded, user?.geojson]);
+
   const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 
