@@ -72,6 +72,157 @@ export const updateRoutes = (updatedGeojson, map) => {
   }
 };
 
+/**
+ * Identifies ghost routes (routes without corresponding locations)
+ * @param {Object} geojson - User's geojson data
+ * @param {Array} locations - Current locations array
+ * @returns {Array} - Array of ghost route indices
+ */
+export const findGhostRoutes = (geojson, locations) => {
+  if (!geojson || !geojson.features || !locations) return [];
+
+  const ghostIndices = [];
+
+  geojson.features.forEach((feature, index) => {
+    const routeCoords = feature.coordinates;
+
+    // Check if any location matches this route's coordinates
+    const hasMatchingLocation = locations.some(
+      (loc) =>
+        loc.coordinates.latitude === routeCoords?.latitude &&
+        loc.coordinates.longitude === routeCoords?.longitude
+    );
+
+    if (!hasMatchingLocation) {
+      ghostIndices.push(index);
+    }
+  });
+
+  return ghostIndices;
+};
+
+/**
+ * Removes ghost routes from geojson
+ * @param {Object} geojson - User's geojson data
+ * @param {Array} locations - Current locations array
+ * @returns {Object} - Cleaned geojson
+ */
+export const removeGhostRoutes = (geojson, locations) => {
+  if (!geojson || !geojson.features) return geojson;
+
+  const cleanedGeoJSON = structuredClone(geojson);
+
+  cleanedGeoJSON.features = cleanedGeoJSON.features.filter((feature) => {
+    const routeCoords = feature.coordinates;
+
+    // Keep only routes that have matching locations
+    return locations.some(
+      (loc) =>
+        loc.coordinates.latitude === routeCoords?.latitude &&
+        loc.coordinates.longitude === routeCoords?.longitude
+    );
+  });
+
+  // Reassign IDs after filtering
+  cleanedGeoJSON.features = cleanedGeoJSON.features.map((feature, index) => ({
+    ...feature,
+    properties: {
+      ...feature.properties,
+      id: index,
+    },
+  }));
+
+  return cleanedGeoJSON;
+};
+
+/**
+ * Shows a confirmation dialog and erases ghost routes
+ * @param {Object} user - Current user object
+ * @param {Function} setUser - User state setter
+ * @param {Array} locations - Current locations
+ * @param {Object} map - Map instance
+ * @param {Function} axios - Axios instance
+ * @returns {Promise<boolean>} - Success status
+ */
+export const eraseGhostRoutes = async (
+  user,
+  setUser,
+  locations,
+  map,
+  axios
+) => {
+  try {
+    const ghostIndices = findGhostRoutes(user.geojson, locations);
+
+    if (ghostIndices.length === 0) {
+      await Swal.fire({
+        title: "No Ghost Routes Found",
+        text: "All routes have corresponding locations.",
+        icon: "info",
+        confirmButtonColor: "#3085d6",
+      });
+      return false;
+    }
+
+    const result = await Swal.fire({
+      title: "Erase Ghost Routes?",
+      html: `
+        <div class="text-left">
+          <p class="mb-2">Found <strong>${ghostIndices.length}</strong> ghost route(s) without destinations.</p>
+          <p class="text-sm text-gray-600">This action will permanently remove these routes.</p>
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, Erase Them",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      reverseButtons: true,
+    });
+
+    if (result.isConfirmed) {
+      const cleanedGeoJSON = removeGhostRoutes(user.geojson, locations);
+
+      const response = await axios.put(`/api/admin/${user.id}/geojson`, {
+        geojson: cleanedGeoJSON,
+      });
+
+      if (response.status === 200) {
+        const updatedUser = response.data.user;
+        setUser(updatedUser);
+        localStorage.setItem("auth", JSON.stringify(updatedUser));
+
+        // Update map
+        if (map && map.getSource("routes")) {
+          map.getSource("routes").setData(cleanedGeoJSON);
+        }
+
+        await Swal.fire({
+          title: "Success!",
+          text: `Removed ${ghostIndices.length} ghost route(s)`,
+          icon: "success",
+          timer: 2000,
+          showConfirmButton: false,
+        });
+
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.error("Error erasing ghost routes:", error);
+    await Swal.fire({
+      title: "Error!",
+      text: "Failed to erase ghost routes",
+      icon: "error",
+      confirmButtonColor: "#d33",
+    });
+    return false;
+  }
+};
+
 // drawCable function
 // drawCable function - WITH DYNAMIC INTERVAL CONTROL
 export const drawCable = (
